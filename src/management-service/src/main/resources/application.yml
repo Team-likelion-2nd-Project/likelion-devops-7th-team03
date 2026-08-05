@@ -1,1 +1,3 @@
-spring.application.name=service-management
+spring:
+  application:
+    name: management-service

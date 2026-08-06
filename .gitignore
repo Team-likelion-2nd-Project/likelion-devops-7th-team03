@@ -40,6 +40,10 @@ __pycache__/
 venv/
 *.egg-info/
 
+# ── MYSQL ───
+00.sql
+*.sql.tmp
+
 # ── IDE / OS ──────────────────────────────────
 .idea/
 .vscode/

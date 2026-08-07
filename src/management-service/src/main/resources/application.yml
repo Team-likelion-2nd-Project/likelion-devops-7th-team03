@@ -1,3 +1,25 @@
 spring:
   application:
     name: management-service
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:shortlink}?serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true
+    username: ${DB_APP_USER:shortlink_app}
+    password: ${DB_APP_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate    # 스키마는 run-migration.sh가 만듦. 앱은 검증만
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: false          # 마이그레이션은 run-migration.sh가 실행 (README "권장" 방식)
+    baseline-on-migrate: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}

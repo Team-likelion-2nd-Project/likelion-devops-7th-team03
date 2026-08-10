@@ -5,7 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
-import redirect_service.clicklog.ClickLogProperties;
+import redirect_service.config.ClickLogProperties;
 
 import java.util.UUID;
 

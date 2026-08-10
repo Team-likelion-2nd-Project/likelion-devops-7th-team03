@@ -6,29 +6,42 @@ import org.springframework.stereotype.Component;
 import java.util.Locale;
 
 @Component
-public class UserAgentDeviceResolver {
+public class UserAgentResolver {
 
     private final UserAgentAnalyzer analyzer = UserAgentAnalyzer.newBuilder()
             .hideMatcherLoadStats()
             .withField("DeviceClass")
+            .withField("OperatingSystemName")
+            .withField("AgentName")
             .withCache(1_000)
             .build();
 
-    public String resolveDeviceType(String userAgent) {
+    public UserAgentInfo resolve(String userAgent) {
         if (userAgent == null || userAgent.isBlank()) {
-            return "UNKNOWN";
+            return new UserAgentInfo("UNKNOWN", "UNKNOWN", "UNKNOWN");
         }
 
-        String deviceClass = analyzer.parse(userAgent).getValue("DeviceClass");
+        var parsedUserAgent = analyzer.parse(userAgent);
+        return new UserAgentInfo(
+                resolveDeviceType(parsedUserAgent.getValue("DeviceClass")),
+                resolveValue(parsedUserAgent.getValue("OperatingSystemName")),
+                resolveValue(parsedUserAgent.getValue("AgentName"))
+        );
+    }
+
+    private String resolveDeviceType(String deviceClass) {
         if (deviceClass == null) {
             return "UNKNOWN";
         }
-
         return switch (deviceClass.toUpperCase(Locale.ROOT)) {
             case "PHONE", "MOBILE" -> "MOBILE";
             case "TABLET" -> "TABLET";
             case "DESKTOP" -> "DESKTOP";
             default -> "UNKNOWN";
         };
+    }
+
+    private String resolveValue(String value) {
+        return value == null || value.isBlank() ? "UNKNOWN" : value;
     }
 }

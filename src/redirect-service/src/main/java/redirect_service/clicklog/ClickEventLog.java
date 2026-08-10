@@ -7,10 +7,13 @@ public record ClickEventLog(
         Long linkId,
         Instant clickedAt,
         String visitorId,
+        String clientIp,
+        String language,
         String userAgent,
         String deviceType,
+        String operatingSystem,
+        String browser,
         String referrer,
-        String referrerCategory,
-        String region
+        String referrerCategory
 ) {
 }

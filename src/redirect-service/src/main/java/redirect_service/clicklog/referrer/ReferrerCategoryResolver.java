@@ -24,7 +24,7 @@ public class ReferrerCategoryResolver {
         if (host.contains("daum.") || host.contains("kakao.")) return "KAKAO";
         if (host.equals("t.co") || host.contains("twitter.") || host.equals("x.com") || host.endsWith(".x.com")) return "X";
         return "ETC";
-        }
+    }
 
     private String extractHost(String referrer) {
         try {

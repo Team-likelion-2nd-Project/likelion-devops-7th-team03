@@ -53,7 +53,7 @@ class RedirectServiceTest {
     }
 
     @Test
-    @DisplayName("비활성화된 링크는 404를 반환한다")
+    @DisplayName("Soft 삭제된 링크는 404를 반환한다")
     void throwsNotFoundForInvisibleLink() {
         when(linkRepository.findBySlug("hidden"))
                 .thenReturn(Optional.of(link("hidden", "https://example.com", false, null)));

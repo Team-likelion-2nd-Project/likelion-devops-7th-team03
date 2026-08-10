@@ -1,6 +1,9 @@
 package redirect_service.redirect;
 
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import redirect_service.clicklog.ClickLogService;
+import redirect_service.clicklog.visitor.ResolvedVisitor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,13 +17,18 @@ import java.net.URI;
 public class RedirectController {
 
     private final RedirectService redirectService;
+    private final ClickLogService clickLogService;
 
     @GetMapping("/{slug}")
-    public ResponseEntity<Void> redirect(@PathVariable String slug) {
-        String originalUrl = redirectService.findRedirectUrl(slug);
+    public ResponseEntity<Void> redirect(@PathVariable String slug, HttpServletRequest request) {
+        RedirectTarget redirectTarget = redirectService.findRedirectTarget(slug);
+        ResolvedVisitor visitor = clickLogService.capture(redirectTarget.linkId(), request);
 
-        return ResponseEntity.status(HttpStatus.FOUND)
-                .location(URI.create(originalUrl))
-                .build();
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create(redirectTarget.originalUrl()));
+        if (visitor.setCookieHeader() != null) {
+            response.header("Set-Cookie", visitor.setCookieHeader());
+        }
+        return response.build();
     }
 }

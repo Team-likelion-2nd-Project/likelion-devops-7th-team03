@@ -41,14 +41,16 @@ class RedirectControllerIntegrationTest {
 
         mockMvc.perform(get("/valid-link"))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "https://example.com/landing"));
+                .andExpect(header().string("Location", "https://example.com/landing"))
+                .andExpect(header().exists("Set-Cookie"));
     }
 
     @Test
     @DisplayName("존재하지 않는 슬러그는 404를 반환한다")
     void returnsNotFoundForMissingSlug() throws Exception {
         mockMvc.perform(get("/missing-link"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                .andExpect(header().doesNotExist("Set-Cookie"));
     }
 
     @Test

@@ -59,6 +59,9 @@ class MySqlRedirectControllerIntegrationTest {
         registry.add("spring.datasource.username", MYSQL::getUsername);
         registry.add("spring.datasource.password", MYSQL::getPassword);
         registry.add("spring.datasource.driver-class-name", MYSQL::getDriverClassName);
+        registry.add("spring.flyway.url", MYSQL::getJdbcUrl);
+        registry.add("spring.flyway.user", MYSQL::getUsername);
+        registry.add("spring.flyway.password", MYSQL::getPassword);
     }
 
     @BeforeEach

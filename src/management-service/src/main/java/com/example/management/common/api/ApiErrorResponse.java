@@ -11,6 +11,10 @@ public record ApiErrorResponse(
         return new ApiErrorResponse(code, new ErrorBody(type, message, Map.of()));
     }
 
+    public static ApiErrorResponse of(int code, String type, String message, Map<String, Object> details) {
+        return new ApiErrorResponse(code, new ErrorBody(type, message, details));
+    }
+
     public record ErrorBody(
             String type,
             String message,

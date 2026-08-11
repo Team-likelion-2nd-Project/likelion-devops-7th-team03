@@ -1,34 +1,62 @@
+name: shortlink
+
 services:
   mysql:
     image: mysql:8.0
-    container_name: shortlink-mysql
     command: --default-time-zone=+00:00
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_ROOT_HOST: '%'
+      MYSQL_DATABASE: ${DB_NAME:-shortlink}
+      MYSQL_USER: ${DB_APP_USER:-shortlink_app}
+      MYSQL_PASSWORD: ${DB_APP_PASSWORD}
     ports:
-      - "${MYSQL_PORT}:3306"
+      - "${MYSQL_PORT:-3306}:3306"
     volumes:
-      - mysql_data:/var/lib/mysql
+      - mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD}"]
       interval: 5s
-      timeout: 5s
-      retries: 10
+      timeout: 3s
+      retries: 20
 
   redis:
     image: redis:7
-    container_name: shortlink-redis
     ports:
-      - "${REDIS_PORT}:6379"
+      - "${REDIS_PORT:-6379}:6379"
 
-  app:
-    build: ./src/management-service        # Dockerfile 있는 경로
-    container_name: shortlink-app
+  management-service:
+    build:
+      context: ./src/management-service
     env_file:
       - .env
     ports:
-      - "8080:8080"
+      - "${MANAGEMENT_PORT:-8080}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  redirect-service:
+    build:
+      context: .
+      dockerfile: src/redirect-service/Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-shortlink}
+      DB_USERNAME: ${DB_APP_USER:-shortlink_app}
+      APP_PASSWORD: ${DB_APP_PASSWORD}
+      # 로컬 MySQL이 만드는 앱 계정으로 Flyway도 실행한다.
+      MIGRATOR_USERNAME: ${DB_APP_USER:-shortlink_app}
+      MIGRATOR_PASSWORD: ${DB_APP_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIRECT_LOG_LEVEL: ${REDIRECT_LOG_LEVEL:-DEBUG}
+      CLICK_LOG_SECURE_COOKIE: ${CLICK_LOG_SECURE_COOKIE:-false}
+    ports:
+      - "${REDIRECTOR_PORT:-8081}:8080"
     depends_on:
       mysql:
         condition: service_healthy
@@ -36,4 +64,4 @@ services:
         condition: service_started
 
 volumes:
-  mysql_data:
+  mysql-data:

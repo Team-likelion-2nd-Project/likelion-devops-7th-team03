@@ -69,13 +69,12 @@ public class AuthService {
     }
 
     /**
-     * refresh token으로 새 access/refresh token을 발급한다. 사용된 refresh token은 즉시
-     * 폐기(rotate)한다.
+     * refresh token으로 새 access/refresh token을 발급한다. 사용된 refresh token은 즉시 폐기(rotate)한다.
      * 만료/탈퇴 케이스는 실패로 응답해야 하지만, 그 과정에서 실행한 delete(폐기)는 커밋되어야 한다 —
      * InvalidRefreshTokenException/WithdrawnUserException은 기본 롤백 대상(unchecked)이라
      * noRollbackFor로 명시하지 않으면 delete까지 함께 롤백되어 폐기됐어야 할 토큰이 남는다.
      */
-    @Transactional(noRollbackFor = { InvalidRefreshTokenException.class, WithdrawnUserException.class })
+    @Transactional(noRollbackFor = {InvalidRefreshTokenException.class, WithdrawnUserException.class})
     public LoginResult reissue(String refreshToken) {
         RefreshToken saved = refreshTokenRepository.findByTokenHash(hash(refreshToken))
                 .orElseThrow(InvalidRefreshTokenException::new);

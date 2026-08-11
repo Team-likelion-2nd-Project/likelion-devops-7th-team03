@@ -2,21 +2,34 @@ package com.example.management.links.service;
 
 import com.example.management.links.config.ShortUrlProperties;
 import com.example.management.links.controller.dto.CreateLinkRequest;
+import com.example.management.links.controller.dto.LinkListItemResponse;
+import com.example.management.links.controller.dto.LinkListResponse;
 import com.example.management.links.controller.dto.LinkResponse;
 import com.example.management.links.controller.dto.LinkStatus;
+import com.example.management.links.controller.dto.PaginationResponse;
+import com.example.management.links.controller.dto.UpdateLinkRequest;
+import com.example.management.links.controller.dto.UpdateLinkResponse;
 import com.example.management.links.domain.Link;
 import com.example.management.links.exception.InvalidExpirationException;
+import com.example.management.links.exception.InvalidLinkRequestException;
 import com.example.management.links.exception.LinkLimitExceededException;
+import com.example.management.links.exception.LinkNotFoundException;
+import com.example.management.links.exception.NotLinkOwnerException;
 import com.example.management.links.repository.LinkRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
+import java.util.List;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.security.SecureRandom;
 
-/** 링크 생성 유스케이스의 첫 최소 구현. 목록·수정·삭제는 각각의 테스트부터 추가한다. */
+/** 링크 생성과 목록 조회 유스케이스. */
 @Service
 public class LinkService {
 
@@ -40,12 +53,15 @@ public class LinkService {
 
     @Transactional
     public LinkResponse create(Long userId, CreateLinkRequest request) {
+        // 1. 만료 정책을 먼저 확인해 유효하지 않은 요청은 DB 작업 전에 막는다.
         validateExpiration(request.expiresAt());
 
+        // 2. 삭제되지 않은 링크만 세어 사용자별 생성 제한을 적용한다.
         if (linkRepository.countByUserIdAndIsVisibleTrue(userId) >= MAX_VISIBLE_LINKS_PER_USER) {
             throw new LinkLimitExceededException();
         }
 
+        // 3. 충돌하지 않는 slug를 가진 링크를 만든 뒤 저장한다.
         Link link = Link.builder()
                 .userId(userId)
                 .slug(generateAvailableSlug())
@@ -57,6 +73,59 @@ public class LinkService {
         // 설정 오류로 저장만 되고 응답 생성이 실패하는 일을 막기 위해 영속화 전에 확인한다.
         String shortUrl = shortUrl(link.getSlug());
         return toResponse(linkRepository.save(link), shortUrl);
+    }
+
+    @Transactional(readOnly = true)
+    public LinkListResponse getList(Long userId, int page, int size) {
+        // 1. 목록의 정렬 기준을 한 곳에서 고정한다. 같은 생성 시각은 내부 ID로 안정적으로 정렬한다.
+        Pageable pageable = PageRequest.of(page, size, Sort.by(
+                Sort.Order.desc("createdAt"),
+                Sort.Order.desc("id")
+        ));
+
+        // 2. Repository 쿼리 자체에 visible 조건을 포함해 soft-deleted 링크를 결과에서 제외한다.
+        Page<Link> linkPage = linkRepository.findByUserIdAndIsVisibleTrue(userId, pageable);
+
+        // 3. DB의 slug와 서버 설정의 base URL을 조합해 API 전용 목록 DTO로 변환한다.
+        List<LinkListItemResponse> links = linkPage.getContent().stream()
+                .map(this::toListItemResponse)
+                .toList();
+
+        return new LinkListResponse(links, new PaginationResponse(
+                linkPage.getNumber(),
+                linkPage.getSize(),
+                linkPage.getTotalElements(),
+                linkPage.getTotalPages()
+        ));
+    }
+
+    @Transactional
+    public UpdateLinkResponse update(Long userId, String linkId, UpdateLinkRequest request) {
+        if (request == null || !request.hasAtLeastOneField()) {
+            throw new InvalidLinkRequestException("수정할 필드가 필요합니다.");
+        }
+
+        // 1. soft-deleted 링크를 제외하고 대상 링크를 찾는다.
+        Link link = linkRepository.findByLinkIdAndIsVisibleTrue(linkId)
+                .orElseThrow(LinkNotFoundException::new);
+
+        // 2. 현재 사용자와 소유자가 다르면 수정 전 즉시 거절한다.
+        if (!link.getUserId().equals(userId)) {
+            throw new NotLinkOwnerException(linkId);
+        }
+
+        // 3. 전달된 필드만 기존값 위에 덮어쓴다. title의 명시적 null은 제목 제거를 뜻한다.
+        String originalUrl = request.hasOriginalUrl() ? request.originalUrl() : link.getOriginalUrl();
+        String title = request.hasTitle() ? request.title() : link.getTitle();
+        LocalDateTime expiresAt = link.getExpiresAt();
+        if (request.hasExpiresAt()) {
+            validateExpiration(request.expiresAt());
+            expiresAt = toUtcLocalDateTime(request.expiresAt());
+        }
+
+        // 4. Link.update는 slug와 linkId를 받지 않으므로 단축 URL 식별자는 유지된다.
+        link.update(originalUrl, title, expiresAt);
+        return toUpdateResponse(link);
     }
 
     private void validateExpiration(OffsetDateTime expiresAt) {
@@ -96,6 +165,28 @@ public class LinkService {
                 toUtcOffsetDateTime(link.getCreatedAt()),
                 toUtcOffsetDateTime(link.getExpiresAt()),
                 link.isExpired(LocalDateTime.now(ZoneOffset.UTC)) ? LinkStatus.EXPIRED : LinkStatus.ACTIVE
+        );
+    }
+
+    private LinkListItemResponse toListItemResponse(Link link) {
+        return new LinkListItemResponse(
+                link.getLinkId(),
+                link.getTitle(),
+                shortUrl(link.getSlug()),
+                link.getOriginalUrl(),
+                toUtcOffsetDateTime(link.getCreatedAt()),
+                toUtcOffsetDateTime(link.getExpiresAt())
+        );
+    }
+
+    private UpdateLinkResponse toUpdateResponse(Link link) {
+        return new UpdateLinkResponse(
+                link.getLinkId(),
+                link.getTitle(),
+                shortUrl(link.getSlug()),
+                link.getOriginalUrl(),
+                toUtcOffsetDateTime(link.getCreatedAt()),
+                toUtcOffsetDateTime(link.getExpiresAt())
         );
     }
 

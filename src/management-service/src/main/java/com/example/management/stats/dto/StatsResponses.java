@@ -1,4 +1,4 @@
-package com.example.management.stats.controller.dto;
+package com.example.management.stats.dto;
 
 import java.time.LocalDate;
 import java.util.List;

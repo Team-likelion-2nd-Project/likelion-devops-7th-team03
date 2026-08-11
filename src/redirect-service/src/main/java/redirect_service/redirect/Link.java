@@ -39,6 +39,14 @@ public class Link {
     private LocalDateTime expiresAt;
 
     public boolean isRedirectable(LocalDateTime now) {
-        return isVisible && (expiresAt == null || now.isBefore(expiresAt));
+        return isEnabled() && (expiresAt == null || now.isBefore(expiresAt));
+    }
+
+    /**
+     * 현재는 soft delete 여부만 확인한다.
+     * 활성화/비활성화 기능이 추가되면 해당 상태까지 이 메서드에서 함께 판단한다.
+     */
+    public boolean isEnabled() {
+        return isVisible;
     }
 }

@@ -8,6 +8,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,11 +16,15 @@ import org.springframework.web.context.WebApplicationContext;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import redirect_service.redirect.RedisRedirectCache;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -51,6 +56,9 @@ class MySqlRedirectControllerIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @MockitoBean
+    private RedisRedirectCache redirectCache;
+
     private MockMvc mockMvc;
 
     @DynamicPropertySource
@@ -66,6 +74,7 @@ class MySqlRedirectControllerIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        when(redirectCache.get(anyString())).thenReturn(Optional.empty());
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
     }
 
@@ -76,7 +85,8 @@ class MySqlRedirectControllerIntegrationTest {
 
         mockMvc.perform(get("/mysql-valid"))
                 .andExpect(status().isFound())
-                .andExpect(header().string("Location", "https://example.com/mysql"));
+                .andExpect(header().string("Location", "https://example.com/mysql"))
+                .andExpect(header().exists("Set-Cookie"));
     }
 
     @Test

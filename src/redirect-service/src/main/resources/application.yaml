@@ -18,6 +18,18 @@ spring:
     user: ${MIGRATOR_USERNAME:shortlink_migrator}
     password: ${MIGRATOR_PASSWORD}
 
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
 app:
+  redirect-cache:
+    ttl: ${REDIRECT_CACHE_TTL:10m}
+
   click-log:
     secure-cookie: ${CLICK_LOG_SECURE_COOKIE:false}
+
+logging:
+  level:
+    redirect_service.redirect: ${REDIRECT_LOG_LEVEL:INFO}

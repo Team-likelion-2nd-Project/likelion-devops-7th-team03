@@ -33,3 +33,8 @@ jwt:
   secret: ${JWT_SECRET}
   access-token-validity-seconds: ${JWT_ACCESS_TOKEN_VALIDITY_SECONDS:1800}
   refresh-token-validity-seconds: ${JWT_REFRESH_TOKEN_VALIDITY_SECONDS:1209600}
+
+# 단축 URL의 공개 주소. 환경마다 다르므로 코드에서 조합할 도메인을 하드코딩하지 않는다.
+# 예: 로컬 http://localhost:8080, 운영 https://s.short.ly
+short-url:
+  base-url: ${SHORT_URL_BASE_URL}

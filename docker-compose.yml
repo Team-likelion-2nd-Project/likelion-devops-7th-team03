@@ -24,18 +24,18 @@ services:
     ports:
       - "${REDIS_PORT:-6379}:6379"
 
-  # management-service:
-  #   build:
-  #     context: ./src/management-service
-  #   env_file:
-  #     - .env
-  #   ports:
-  #     - "${MANAGEMENT_PORT:-8080}:8080"
-  #   depends_on:
-  #     mysql:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_started
+  management-service:
+    build:
+      context: ./src/management-service
+    env_file:
+      - .env
+    ports:
+      - "${MANAGEMENT_PORT:-8080}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   redirect-service:
     build:

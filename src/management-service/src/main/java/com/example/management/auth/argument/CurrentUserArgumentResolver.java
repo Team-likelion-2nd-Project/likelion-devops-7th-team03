@@ -1,4 +1,4 @@
-package com.example.management.auth.controller.argument;
+package com.example.management.auth.argument;
 
 import com.example.management.auth.repository.UserRepository;
 import com.example.management.common.exception.AuthenticationRequiredException;

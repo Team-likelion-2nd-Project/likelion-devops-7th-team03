@@ -10,11 +10,6 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(basePackages = "com.example.management.links")
 public class LinkExceptionHandler {
 
-    @ExceptionHandler(InvalidLinkRequestException.class)
-    public ResponseEntity<ApiErrorResponse> handleInvalidRequest(InvalidLinkRequestException e) {
-        return error(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "요청 값을 확인해주세요.");
-    }
-
     @ExceptionHandler(InvalidExpirationException.class)
     public ResponseEntity<ApiErrorResponse> handleInvalidExpiration(InvalidExpirationException e) {
         return error(HttpStatus.BAD_REQUEST, "INVALID_EXPIRATION", e.getMessage());

@@ -1,6 +1,6 @@
 package com.example.management.auth.config;
 
-import com.example.management.auth.controller.argument.CurrentUserArgumentResolver;
+import com.example.management.auth.argument.CurrentUserArgumentResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;

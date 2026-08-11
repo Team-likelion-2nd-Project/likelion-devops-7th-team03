@@ -1,6 +1,8 @@
 package com.example.management.links.service;
 
 import com.example.management.links.config.ShortUrlProperties;
+import com.example.management.links.cache.RedirectCacheEntry;
+import com.example.management.links.cache.RedirectCacheRefreshEvent;
 import com.example.management.links.controller.dto.CreateLinkRequest;
 import com.example.management.links.controller.dto.LinkListItemResponse;
 import com.example.management.links.controller.dto.LinkListResponse;
@@ -11,11 +13,12 @@ import com.example.management.links.controller.dto.UpdateLinkRequest;
 import com.example.management.links.controller.dto.UpdateLinkResponse;
 import com.example.management.links.domain.Link;
 import com.example.management.links.exception.InvalidExpirationException;
-import com.example.management.links.exception.InvalidLinkRequestException;
 import com.example.management.links.exception.LinkLimitExceededException;
 import com.example.management.links.exception.LinkNotFoundException;
 import com.example.management.links.exception.NotLinkOwnerException;
 import com.example.management.links.repository.LinkRepository;
+import org.springframework.context.ApplicationEventPublisher;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
@@ -31,6 +34,7 @@ import java.security.SecureRandom;
 
 /** 링크 생성과 목록 조회 유스케이스. */
 @Service
+@RequiredArgsConstructor
 public class LinkService {
 
     private static final String BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -44,17 +48,12 @@ public class LinkService {
 
     private final LinkRepository linkRepository;
     private final ShortUrlProperties shortUrlProperties;
-
-    public LinkService(LinkRepository linkRepository,
-                       ShortUrlProperties shortUrlProperties) {
-        this.linkRepository = linkRepository;
-        this.shortUrlProperties = shortUrlProperties;
-    }
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public LinkResponse create(Long userId, CreateLinkRequest request) {
-        // 1. 만료 정책을 먼저 확인해 유효하지 않은 요청은 DB 작업 전에 막는다.
-        validateExpiration(request.expiresAt());
+        // 1. 과거·최대 기간처럼 현재 시각에 의존하는 만료 정책은 Service에서 판단한다.
+        validateExpirationPolicy(request.expiresAt());
 
         // 2. 삭제되지 않은 링크만 세어 사용자별 생성 제한을 적용한다.
         if (linkRepository.countByUserIdAndIsVisibleTrue(userId) >= MAX_VISIBLE_LINKS_PER_USER) {
@@ -72,7 +71,9 @@ public class LinkService {
 
         // 설정 오류로 저장만 되고 응답 생성이 실패하는 일을 막기 위해 영속화 전에 확인한다.
         String shortUrl = shortUrl(link.getSlug());
-        return toResponse(linkRepository.save(link), shortUrl);
+        Link savedLink = linkRepository.save(link);
+        publishRedirectCacheRefresh(savedLink);
+        return toResponse(savedLink, shortUrl);
     }
 
     @Transactional(readOnly = true)
@@ -101,10 +102,6 @@ public class LinkService {
 
     @Transactional
     public UpdateLinkResponse update(Long userId, String linkId, UpdateLinkRequest request) {
-        if (request == null || !request.hasAtLeastOneField()) {
-            throw new InvalidLinkRequestException("수정할 필드가 필요합니다.");
-        }
-
         // 1. soft-deleted 링크를 제외하고 대상 링크를 찾는다.
         Link link = linkRepository.findByLinkIdAndIsVisibleTrue(linkId)
                 .orElseThrow(LinkNotFoundException::new);
@@ -114,24 +111,36 @@ public class LinkService {
             throw new NotLinkOwnerException(linkId);
         }
 
-        // 3. 전달된 필드만 기존값 위에 덮어쓴다. title의 명시적 null은 제목 제거를 뜻한다.
-        String originalUrl = request.hasOriginalUrl() ? request.originalUrl() : link.getOriginalUrl();
-        String title = request.hasTitle() ? request.title() : link.getTitle();
+        // 3. null 또는 미전달 필드는 수정하지 않는다.
+        String originalUrl = request.originalUrl() != null ? request.originalUrl() : link.getOriginalUrl();
+        String title = request.title() != null ? request.title() : link.getTitle();
         LocalDateTime expiresAt = link.getExpiresAt();
-        if (request.hasExpiresAt()) {
-            validateExpiration(request.expiresAt());
+        if (request.expiresAt() != null) {
+            validateExpirationPolicy(request.expiresAt());
             expiresAt = toUtcLocalDateTime(request.expiresAt());
         }
 
         // 4. Link.update는 slug와 linkId를 받지 않으므로 단축 URL 식별자는 유지된다.
         link.update(originalUrl, title, expiresAt);
+        publishRedirectCacheRefresh(link);
         return toUpdateResponse(link);
     }
 
-    private void validateExpiration(OffsetDateTime expiresAt) {
-        if (expiresAt == null || !ZoneOffset.UTC.equals(expiresAt.getOffset())) {
-            throw new InvalidExpirationException();
+    @Transactional
+    public void delete(Long userId, String linkId) {
+        Link link = linkRepository.findByLinkIdAndIsVisibleTrue(linkId)
+                .orElseThrow(LinkNotFoundException::new);
+
+        if (!link.getUserId().equals(userId)) {
+            throw new NotLinkOwnerException(linkId, "본인이 생성한 링크만 삭제할 수 있습니다.");
         }
+
+        link.softDelete();
+        // 키를 지우지 않고 isEnabled=false를 저장해 삭제된 인기 링크가 DB를 반복 조회하지 않게 한다.
+        publishRedirectCacheRefresh(link);
+    }
+
+    private void validateExpirationPolicy(OffsetDateTime expiresAt) {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         if (!expiresAt.isAfter(now) || expiresAt.isAfter(now.plusYears(MAX_EXPIRATION_YEARS))) {
             throw new InvalidExpirationException();
@@ -204,5 +213,10 @@ public class LinkService {
 
     private OffsetDateTime toUtcOffsetDateTime(LocalDateTime dateTime) {
         return dateTime == null ? null : dateTime.atOffset(ZoneOffset.UTC);
+    }
+
+    private void publishRedirectCacheRefresh(Link link) {
+        // 이벤트에는 Entity가 아닌 현재 값의 스냅샷을 담아, 커밋 후에도 의도한 상태를 정확히 쓴다.
+        eventPublisher.publishEvent(new RedirectCacheRefreshEvent(RedirectCacheEntry.from(link)));
     }
 }

@@ -1,4 +1,4 @@
-package com.example.management.auth.controller.argument;
+package com.example.management.auth.argument;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;

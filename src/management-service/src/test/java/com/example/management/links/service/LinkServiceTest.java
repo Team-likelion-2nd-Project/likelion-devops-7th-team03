@@ -9,11 +9,13 @@ import com.example.management.links.controller.dto.LinkResponse;
 import com.example.management.links.controller.dto.LinkStatus;
 import com.example.management.links.domain.Link;
 import com.example.management.links.exception.InvalidExpirationException;
-import com.example.management.links.exception.InvalidLinkRequestException;
 import com.example.management.links.exception.LinkLimitExceededException;
 import com.example.management.links.exception.LinkNotFoundException;
 import com.example.management.links.exception.NotLinkOwnerException;
 import com.example.management.links.repository.LinkRepository;
+import com.example.management.links.cache.RedirectCacheEntry;
+import com.example.management.links.cache.RedirectCacheRefreshEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -50,11 +52,15 @@ class LinkServiceTest {
     @Mock
     private LinkRepository linkRepository;
 
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
     private LinkService linkService;
 
     @BeforeEach
     void setUp() {
-        linkService = new LinkService(linkRepository, new ShortUrlProperties("https://s.short.ly"));
+        linkService = new LinkService(
+                linkRepository, new ShortUrlProperties("https://s.short.ly"), eventPublisher);
     }
 
     @Test
@@ -79,6 +85,7 @@ class LinkServiceTest {
         assertThat(response.shortUrl()).isEqualTo("https://s.short.ly/" + saved.getSlug());
         assertThat(response.expiresAt()).isEqualTo(expiresAt);
         assertThat(response.status()).isEqualTo(LinkStatus.ACTIVE);
+        verifyRedirectCacheRefresh(saved, true);
     }
 
     @Test
@@ -99,26 +106,6 @@ class LinkServiceTest {
                 "https://example.com", OffsetDateTime.now(ZoneOffset.UTC).plusYears(3).plusSeconds(1), "too-far");
 
         assertThrows(InvalidExpirationException.class, () -> linkService.create(10L, request));
-
-        verifyNoInteractions(linkRepository);
-    }
-
-    @Test
-    @DisplayName("create: expiresAt이 없으면 저장하지 않고 만료일 오류를 던진다")
-    void create_withoutExpiresAt_throwsInvalidExpiration() {
-        assertThrows(InvalidExpirationException.class, () -> linkService.create(
-                10L, new CreateLinkRequest("https://example.com", null, null)));
-
-        verifyNoInteractions(linkRepository);
-    }
-
-    @Test
-    @DisplayName("create: expiresAt이 UTC가 아니면 저장하지 않고 만료일 오류를 던진다")
-    void create_nonUtcExpiresAt_throwsInvalidExpiration() {
-        OffsetDateTime nonUtcExpiration = OffsetDateTime.now(ZoneOffset.ofHours(9)).plusDays(1);
-
-        assertThrows(InvalidExpirationException.class, () -> linkService.create(
-                10L, new CreateLinkRequest("https://example.com", nonUtcExpiration, null)));
 
         verifyNoInteractions(linkRepository);
     }
@@ -152,7 +139,7 @@ class LinkServiceTest {
     @DisplayName("create: short URL base 설정이 없으면 저장 전에 실패한다")
     void create_missingShortUrlBase_throwsBeforeSave() {
         LinkService serviceWithoutBaseUrl = new LinkService(
-                linkRepository, new ShortUrlProperties(" "));
+                linkRepository, new ShortUrlProperties(" "), eventPublisher);
         when(linkRepository.existsBySlug(anyString())).thenReturn(false);
 
         assertThrows(IllegalStateException.class, () -> serviceWithoutBaseUrl.create(
@@ -219,10 +206,11 @@ class LinkServiceTest {
     void update_ownerChangesProvidedFields_keepsSlugAndCreatedAt() {
         Link link = link("before", "before-title", "Ab3dE9f",
                 LocalDateTime.of(2026, 8, 10, 12, 0), LocalDateTime.of(2027, 8, 10, 0, 0));
-        UpdateLinkRequest request = new UpdateLinkRequest();
-        request.setOriginalUrl("https://example.com/after");
-        request.setTitle("after-title");
-        request.setExpiresAt(OffsetDateTime.of(2027, 8, 11, 0, 0, 0, 0, ZoneOffset.UTC));
+        UpdateLinkRequest request = new UpdateLinkRequest(
+                "https://example.com/after",
+                "after-title",
+                OffsetDateTime.of(2027, 8, 11, 0, 0, 0, 0, ZoneOffset.UTC)
+        );
         when(linkRepository.findByLinkIdAndIsVisibleTrue(link.getLinkId())).thenReturn(Optional.of(link));
 
         UpdateLinkResponse response = linkService.update(10L, link.getLinkId(), request);
@@ -234,23 +222,7 @@ class LinkServiceTest {
         assertThat(link.getCreatedAt()).isEqualTo(LocalDateTime.of(2026, 8, 10, 12, 0));
         assertThat(response.shortUrl()).isEqualTo("https://s.short.ly/Ab3dE9f");
         assertThat(response.createdAt()).isEqualTo(OffsetDateTime.of(2026, 8, 10, 12, 0, 0, 0, ZoneOffset.UTC));
-    }
-
-    @Test
-    @DisplayName("update: title의 명시적 null은 제목만 제거하고 나머지 값은 유지한다")
-    void update_explicitNullTitle_removesTitleOnly() {
-        Link link = link("before", "before-title", "Ab3dE9f",
-                LocalDateTime.of(2026, 8, 10, 12, 0), LocalDateTime.of(2027, 8, 10, 0, 0));
-        UpdateLinkRequest request = new UpdateLinkRequest();
-        request.setTitle(null);
-        when(linkRepository.findByLinkIdAndIsVisibleTrue(link.getLinkId())).thenReturn(Optional.of(link));
-
-        UpdateLinkResponse response = linkService.update(10L, link.getLinkId(), request);
-
-        assertThat(link.getTitle()).isNull();
-        assertThat(link.getOriginalUrl()).isEqualTo("https://example.com/before");
-        assertThat(link.getExpiresAt()).isEqualTo(LocalDateTime.of(2027, 8, 10, 0, 0));
-        assertThat(response.title()).isNull();
+        verifyRedirectCacheRefresh(link, true);
     }
 
     @Test
@@ -258,9 +230,8 @@ class LinkServiceTest {
     void update_expiredLinkWithFutureExpiration_succeeds() {
         Link link = link("before", "title", "Ab3dE9f",
                 LocalDateTime.of(2026, 8, 10, 12, 0), LocalDateTime.of(2026, 8, 11, 0, 0));
-        UpdateLinkRequest request = new UpdateLinkRequest();
         OffsetDateTime futureExpiration = OffsetDateTime.now(ZoneOffset.UTC).plusDays(1);
-        request.setExpiresAt(futureExpiration);
+        UpdateLinkRequest request = new UpdateLinkRequest(null, null, futureExpiration);
         when(linkRepository.findByLinkIdAndIsVisibleTrue(link.getLinkId())).thenReturn(Optional.of(link));
 
         linkService.update(10L, link.getLinkId(), request);
@@ -271,8 +242,7 @@ class LinkServiceTest {
     @Test
     @DisplayName("update: 링크가 없거나 soft-deleted 상태면 링크 없음 오류를 던진다")
     void update_linkNotFound_throwsNotFoundException() {
-        UpdateLinkRequest request = new UpdateLinkRequest();
-        request.setTitle("title");
+        UpdateLinkRequest request = new UpdateLinkRequest(null, "title", null);
         when(linkRepository.findByLinkIdAndIsVisibleTrue("missing-link-id")).thenReturn(Optional.empty());
 
         assertThrows(LinkNotFoundException.class, () -> linkService.update(10L, "missing-link-id", request));
@@ -288,8 +258,7 @@ class LinkServiceTest {
                 .title("title")
                 .expiresAt(LocalDateTime.of(2027, 8, 10, 0, 0))
                 .build();
-        UpdateLinkRequest request = new UpdateLinkRequest();
-        request.setTitle("after-title");
+        UpdateLinkRequest request = new UpdateLinkRequest(null, "after-title", null);
         when(linkRepository.findByLinkIdAndIsVisibleTrue(link.getLinkId())).thenReturn(Optional.of(link));
 
         assertThrows(NotLinkOwnerException.class, () -> linkService.update(10L, link.getLinkId(), request));
@@ -298,28 +267,16 @@ class LinkServiceTest {
     }
 
     @Test
-    @DisplayName("update: 명시적 null 만료일은 만료일 오류를 던지고 값을 바꾸지 않는다")
-    void update_explicitNullExpiration_throwsInvalidExpiration() {
+    @DisplayName("delete: 키를 제거하지 않고 비활성 캐시 갱신 이벤트를 발행한다")
+    void delete_ownerMarksLinkInvisibleAndPublishesInactiveCacheRefresh() {
         Link link = link("before", "title", "Ab3dE9f",
                 LocalDateTime.of(2026, 8, 10, 12, 0), LocalDateTime.of(2027, 8, 10, 0, 0));
-        UpdateLinkRequest request = new UpdateLinkRequest();
-        request.setExpiresAt(null);
         when(linkRepository.findByLinkIdAndIsVisibleTrue(link.getLinkId())).thenReturn(Optional.of(link));
 
-        assertThrows(InvalidExpirationException.class, () -> linkService.update(10L, link.getLinkId(), request));
+        linkService.delete(10L, link.getLinkId());
 
-        assertThat(link.getExpiresAt()).isEqualTo(LocalDateTime.of(2027, 8, 10, 0, 0));
-    }
-
-    @Test
-    @DisplayName("update: 요청 본문 또는 수정 필드가 없으면 조회 전에 요청 오류를 던진다")
-    void update_withoutRequestOrFields_throwsInvalidRequestBeforeLookup() {
-        assertThrows(InvalidLinkRequestException.class,
-                () -> linkService.update(10L, "link-id", null));
-        assertThrows(InvalidLinkRequestException.class,
-                () -> linkService.update(10L, "link-id", new UpdateLinkRequest()));
-
-        verifyNoInteractions(linkRepository);
+        assertThat(link.isVisible()).isFalse();
+        verifyRedirectCacheRefresh(link, false);
     }
 
     private Link link(String originalUrl, String title, String slug,
@@ -332,14 +289,25 @@ class LinkServiceTest {
                 .expiresAt(expiresAt)
                 .build();
         ReflectionTestUtils.setField(link, "createdAt", createdAt);
+        ReflectionTestUtils.setField(link, "id", 1L);
         return link;
     }
 
     private void saveWithCreatedAt() {
         when(linkRepository.save(any(Link.class))).thenAnswer(invocation -> {
             Link saved = invocation.getArgument(0);
+            ReflectionTestUtils.setField(saved, "id", 1L);
             ReflectionTestUtils.setField(saved, "createdAt", LocalDateTime.of(2026, 8, 10, 12, 0));
             return saved;
         });
+    }
+
+    private void verifyRedirectCacheRefresh(Link link, boolean isEnabled) {
+        ArgumentCaptor<RedirectCacheRefreshEvent> eventCaptor =
+                ArgumentCaptor.forClass(RedirectCacheRefreshEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().entry()).isEqualTo(new RedirectCacheEntry(
+                link.getId(), link.getSlug(), link.getOriginalUrl(), isEnabled, link.getExpiresAt()
+        ));
     }
 }

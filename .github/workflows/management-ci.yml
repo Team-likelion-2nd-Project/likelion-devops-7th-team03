@@ -50,6 +50,7 @@ jobs:
           --health-interval=5s
           --health-timeout=5s
           --health-retries=10
+          --default-time-zone=+00:00
 
       redis:
         image: redis:7

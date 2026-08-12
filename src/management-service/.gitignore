@@ -2,6 +2,7 @@ HELP.md
 .gradle
 application-local.yml
 application-prod.yml
+application-test.yml
 .env
 *.log
 build/

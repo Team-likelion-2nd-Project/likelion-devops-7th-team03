@@ -24,6 +24,11 @@ spring:
       host: ${REDIS_HOST:127.0.0.1}
       port: ${REDIS_PORT:6379}
 
+app:
+  redirect-cache:
+    # 관리 서비스와 리다이렉트 서비스가 같은 TTL을 써야 갱신 정책이 일관된다.
+    ttl: ${REDIRECT_CACHE_TTL:10m}
+
 kakao:
   client-id: ${KAKAO_CLIENT_ID}
   client-secret: ${KAKAO_CLIENT_SECRET:}
@@ -33,3 +38,8 @@ jwt:
   secret: ${JWT_SECRET}
   access-token-validity-seconds: ${JWT_ACCESS_TOKEN_VALIDITY_SECONDS:1800}
   refresh-token-validity-seconds: ${JWT_REFRESH_TOKEN_VALIDITY_SECONDS:1209600}
+
+# 단축 URL의 공개 주소. 환경마다 다르므로 코드에서 조합할 도메인을 하드코딩하지 않는다.
+# 예: 로컬 http://localhost:8080, 운영 https://s.short.ly
+short-url:
+  base-url: ${SHORT_URL_BASE_URL}

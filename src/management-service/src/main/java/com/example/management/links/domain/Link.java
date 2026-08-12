@@ -1,4 +1,4 @@
-package com.example.management.url_link.domain;
+package com.example.management.links.domain;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;

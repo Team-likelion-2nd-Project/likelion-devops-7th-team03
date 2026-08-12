@@ -27,8 +27,23 @@ services:
   management-service:
     build:
       context: ./src/management-service
-    env_file:
-      - .env
+    environment:
+      # 컨테이너에서는 localhost가 아닌 Compose 서비스명으로 접속한다.
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-shortlink}
+      DB_APP_USER: ${DB_APP_USER:-shortlink_app}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIRECT_CACHE_TTL: ${REDIRECT_CACHE_TTL:-10m}
+      KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
+      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TOKEN_VALIDITY_SECONDS: ${JWT_ACCESS_TOKEN_VALIDITY_SECONDS:-1800}
+      JWT_REFRESH_TOKEN_VALIDITY_SECONDS: ${JWT_REFRESH_TOKEN_VALIDITY_SECONDS:-1209600}
+      SHORT_URL_BASE_URL: ${SHORT_URL_BASE_URL}
     ports:
       - "${MANAGEMENT_PORT:-8080}:8080"
     depends_on:
@@ -46,13 +61,13 @@ services:
       DB_HOST: mysql
       DB_PORT: 3306
       DB_NAME: ${DB_NAME:-shortlink}
-      DB_USERNAME: ${DB_APP_USER:-shortlink_app}
-      APP_PASSWORD: ${DB_APP_PASSWORD}
-      # 로컬 MySQL이 만드는 앱 계정으로 Flyway도 실행한다.
-      MIGRATOR_USERNAME: ${DB_APP_USER:-shortlink_app}
-      MIGRATOR_PASSWORD: ${DB_APP_PASSWORD}
+      DB_APP_USER: ${DB_APP_USER:-shortlink_app}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD}
+      DB_MIGRATOR_USER: ${DB_MIGRATOR_USER:-shortlink_migrator}
+      DB_MIGRATOR_PASSWORD: ${DB_MIGRATOR_PASSWORD}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIRECT_CACHE_TTL: ${REDIRECT_CACHE_TTL:-10m}
       REDIRECT_LOG_LEVEL: ${REDIRECT_LOG_LEVEL:-DEBUG}
       CLICK_LOG_SECURE_COOKIE: ${CLICK_LOG_SECURE_COOKIE:-false}
     ports:

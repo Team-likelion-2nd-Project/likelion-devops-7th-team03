@@ -26,6 +26,7 @@ spring:
 
 app:
   redirect-cache:
+    # 관리 서비스와 리다이렉트 서비스가 같은 TTL을 써야 갱신 정책이 일관된다.
     ttl: ${REDIRECT_CACHE_TTL:10m}
 
 kakao:

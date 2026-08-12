@@ -1,5 +1,6 @@
 package com.example.management.stats.service;
 
+import com.example.management.auth.repository.UserRepository;
 import com.example.management.stats.domain.LinkDailyDimensionStat;
 import com.example.management.stats.domain.LinkDailyStat;
 import com.example.management.stats.dto.DailyChangeResponse;
@@ -11,6 +12,7 @@ import com.example.management.url_link.domain.Link;
 import com.example.management.url_link.domain.LinkRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -20,10 +22,8 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 public class StatsService {
-    // TODO: kakao-login merge 후 SecurityContext에서 실제 userId(UUID)를 꺼내
-    // UserRepository로 내부 id 조회하는 방식으로 교체할 것. 지금은 임시 고정값.
-    private static final Long TEMP_USER_ID = 1L;
 
+    private final UserRepository userRepository;
     private final LinkRepository linkRepository;
     private final LinkDailyStatRepository dailyStatRepository;
     private final LinkDailyDimensionStatRepository dimensionStatRepository;
@@ -51,7 +51,7 @@ public class StatsService {
             throw new IllegalArgumentException("linkIds must not be empty");
         }
 
-        List<Link> links = linkRepository.findByLinkIdInAndUserIdAndIsVisibleTrue(linkUuids, TEMP_USER_ID);
+        List<Link> links = linkRepository.findByLinkIdInAndUserIdAndIsVisibleTrue(linkUuids, resolveCurrentUserId());
         List<Long> internalIds = links.stream().map(Link::getId).toList();
 
         if (internalIds.isEmpty()) {
@@ -144,7 +144,15 @@ public class StatsService {
     }
 
     private Link resolveOwnedLink(String linkUuid) {
-        return linkRepository.findByLinkIdAndUserIdAndIsVisibleTrue(linkUuid, TEMP_USER_ID)
+        return linkRepository.findByLinkIdAndUserIdAndIsVisibleTrue(linkUuid, resolveCurrentUserId())
                 .orElseThrow(() -> new IllegalArgumentException("link not found or not owned: " + linkUuid));
+    }
+
+    /** JwtAuthenticationFilter가 principal에 넣어둔 JWT subject(User.userId)로 내부 id를 조회한다 */
+    private Long resolveCurrentUserId() {
+        String userId = (String) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        return userRepository.findByUserId(userId)
+                .orElseThrow(() -> new IllegalArgumentException("user not found: " + userId))
+                .getId();
     }
 }

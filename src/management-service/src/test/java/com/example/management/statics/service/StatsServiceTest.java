@@ -1,5 +1,7 @@
 package com.example.management.statics.service;
 
+import com.example.management.auth.domain.User;
+import com.example.management.auth.repository.UserRepository;
 import com.example.management.stats.domain.LinkDailyDimensionStat;
 import com.example.management.stats.domain.LinkDailyStat;
 import com.example.management.stats.dto.DailyChangeResponse;
@@ -10,6 +12,8 @@ import com.example.management.stats.service.StatsService;
 import com.example.management.url_link.domain.Link;
 import com.example.management.url_link.domain.LinkRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -20,6 +24,8 @@ import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -36,16 +42,21 @@ import static org.mockito.Mockito.when;
  * DB/Redis를 실제로 띄우지 않고 Repository/RedisTemplate을 Mock으로 대체해서
  * "계산 로직 + 소유권 검증 흐름"만 검증한다.
  *
- * TEMP_USER_ID(=1L)는 StatsService 내부의 임시 고정값과 반드시 일치시켜야 한다
- * (kakao-login 완성 후 SecurityContext 기반으로 교체될 예정 — StatsService의 TODO 참조).
+ * TEMP_USER_ID(=1L)는 이제 하드코딩이 아니라, SecurityContext에 심어둔
+ * LOGGED_IN_USER_UUID를 UserRepository가 조회했을 때 반환하는 "내부 id" 역할이다
+ * (StatsService.resolveCurrentUserId() 참조).
  */
 @Slf4j
 @ExtendWith(MockitoExtension.class)
 class StatsServiceTest {
 
     private static final Long TEMP_USER_ID = 1L;
+    private static final String LOGGED_IN_USER_UUID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
     private static final String LINK_UUID = "550e8400-e29b-41d4-a716-446655440000";
     private static final Long INTERNAL_LINK_ID = 10L;
+
+    @Mock
+    private UserRepository userRepository;
 
     @Mock
     private LinkRepository linkRepository;
@@ -64,6 +75,21 @@ class StatsServiceTest {
 
     @InjectMocks
     private StatsService statsService;
+
+    @BeforeEach
+    void setUpSecurityContext() {
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(LOGGED_IN_USER_UUID, null));
+
+        User loggedInUser = Mockito.mock(User.class);
+        when(loggedInUser.getId()).thenReturn(TEMP_USER_ID);
+        when(userRepository.findByUserId(LOGGED_IN_USER_UUID)).thenReturn(Optional.of(loggedInUser));
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
 
     /** 소유권 검증(resolveOwnedLink)이 성공하는 상황을 공통으로 세팅 */
     private void mockOwnedLink() {

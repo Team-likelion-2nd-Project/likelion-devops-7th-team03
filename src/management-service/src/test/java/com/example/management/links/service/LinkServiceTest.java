@@ -267,6 +267,31 @@ class LinkServiceTest {
     }
 
     @Test
+    @DisplayName("delete: 링크가 없거나 soft-deleted 상태면 LinkNotFoundException을 던진다")
+    void delete_linkNotFound_throwsLinkNotFoundException() {
+        when(linkRepository.findByLinkIdAndIsVisibleTrue("missing-link-id")).thenReturn(Optional.empty());
+
+        assertThrows(LinkNotFoundException.class, () -> linkService.delete(10L, "missing-link-id"));
+    }
+
+    @Test
+    @DisplayName("delete: 다른 사용자의 링크면 NotLinkOwnerException을 던지고 링크 상태를 바꾸지 않는다")
+    void delete_nonOwner_throwsNotLinkOwnerException() {
+        Link link = Link.builder()
+                .userId(20L)
+                .slug("Ab3dE9f")
+                .originalUrl("https://example.com/before")
+                .title("title")
+                .expiresAt(LocalDateTime.of(2027, 8, 10, 0, 0))
+                .build();
+        when(linkRepository.findByLinkIdAndIsVisibleTrue(link.getLinkId())).thenReturn(Optional.of(link));
+
+        assertThrows(NotLinkOwnerException.class, () -> linkService.delete(10L, link.getLinkId()));
+
+        assertThat(link.isVisible()).isTrue();
+    }
+
+    @Test
     @DisplayName("delete: 키를 제거하지 않고 비활성 캐시 갱신 이벤트를 발행한다")
     void delete_ownerMarksLinkInvisibleAndPublishesInactiveCacheRefresh() {
         Link link = link("before", "title", "Ab3dE9f",

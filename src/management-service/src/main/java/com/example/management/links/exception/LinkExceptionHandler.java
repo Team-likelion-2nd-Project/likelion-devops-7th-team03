@@ -20,6 +20,16 @@ public class LinkExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, "LINK_LIMIT_EXCEEDED", e.getMessage());
     }
 
+    @ExceptionHandler(LinkNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleLinkNotFound(LinkNotFoundException e) {
+        return error(HttpStatus.NOT_FOUND, "LINK_NOT_FOUND", e.getMessage());
+    }
+
+    @ExceptionHandler(NotLinkOwnerException.class)
+    public ResponseEntity<ApiErrorResponse> handleNotLinkOwner(NotLinkOwnerException e) {
+        return error(HttpStatus.FORBIDDEN, "LINK_ACCESS_DENIED", e.getMessage());
+    }
+
     private ResponseEntity<ApiErrorResponse> error(HttpStatus status, String type, String message) {
         return ResponseEntity.status(status).body(ApiErrorResponse.of(status.value(), type, message));
     }

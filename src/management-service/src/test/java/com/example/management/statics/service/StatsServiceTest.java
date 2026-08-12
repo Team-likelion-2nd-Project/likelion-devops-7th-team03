@@ -91,7 +91,7 @@ class StatsServiceTest {
                     .thenReturn(Optional.of(stat(dayBeforeYesterday, 100, 80)));
 
             // when
-            DailyChangeResponse response = statsService.getDailyChange(LINK_UUID, yesterday);
+            DailyChangeResponse response = statsService.getDailyChange(TEMP_USER_ID, LINK_UUID, yesterday);
 
             log.info("===== 일별 증감률 테스트 (증가 케이스) =====");
             log.info("linkId={}, baseDate={}", response.linkId(), response.baseDate());
@@ -119,7 +119,7 @@ class StatsServiceTest {
             when(dailyStatRepository.findByLinkIdAndStatDate(INTERNAL_LINK_ID, dayBeforeYesterday))
                     .thenReturn(Optional.empty());
 
-            DailyChangeResponse response = statsService.getDailyChange(LINK_UUID, yesterday);
+            DailyChangeResponse response = statsService.getDailyChange(TEMP_USER_ID, LINK_UUID, yesterday);
 
             log.info("===== 일별 증감률 테스트 (그제 데이터 없음) =====");
             log.info("clicks: base={}, previous={}, changeRate={}%",
@@ -141,7 +141,7 @@ class StatsServiceTest {
             when(dailyStatRepository.findByLinkIdAndStatDate(INTERNAL_LINK_ID, dayBeforeYesterday))
                     .thenReturn(Optional.of(stat(dayBeforeYesterday, 0, 0)));
 
-            DailyChangeResponse response = statsService.getDailyChange(LINK_UUID, yesterday);
+            DailyChangeResponse response = statsService.getDailyChange(TEMP_USER_ID, LINK_UUID, yesterday);
 
             log.info("===== 일별 증감률 테스트 (양쪽 0) =====");
             log.info("changeRate={}%", response.clicks().changeRate());
@@ -157,7 +157,7 @@ class StatsServiceTest {
 
             log.info("===== 소유권 검증 실패 테스트 =====");
 
-            assertThatThrownBy(() -> statsService.getDailyChange("not-owned-uuid", LocalDate.now()))
+            assertThatThrownBy(() -> statsService.getDailyChange(TEMP_USER_ID, "not-owned-uuid", LocalDate.now()))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("not-owned-uuid");
         }
@@ -182,7 +182,7 @@ class StatsServiceTest {
                     ));
 
             DimensionBreakdownResponse response = statsService.getBreakdown(
-                    LINK_UUID, LinkDailyDimensionStat.DimensionType.DEVICE, from, to);
+                    TEMP_USER_ID, LINK_UUID, LinkDailyDimensionStat.DimensionType.DEVICE, from, to);
 
             log.info("===== 분포 조회 테스트 =====");
             response.breakdown().forEach(item ->
@@ -211,7 +211,7 @@ class StatsServiceTest {
                     .thenReturn(List.of());
 
             DimensionBreakdownResponse response = statsService.getBreakdown(
-                    LINK_UUID, LinkDailyDimensionStat.DimensionType.REGION, from, to);
+                    TEMP_USER_ID, LINK_UUID, LinkDailyDimensionStat.DimensionType.REGION, from, to);
 
             log.info("===== 분포 조회 테스트 (데이터 없음) =====");
             log.info("breakdown size={}", response.breakdown().size());
@@ -233,7 +233,7 @@ class StatsServiceTest {
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(valueOperations.get(expectedKey)).thenReturn("42");
 
-            long result = statsService.getRealtimeClickCount(LINK_UUID);
+            long result = statsService.getRealtimeClickCount(TEMP_USER_ID, LINK_UUID);
 
             log.info("===== 실시간 접속자 수 테스트 (값 있음) =====");
             log.info("redisKey={}, result={}", expectedKey, result);
@@ -249,7 +249,7 @@ class StatsServiceTest {
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(valueOperations.get(anyString())).thenReturn(null);
 
-            long result = statsService.getRealtimeClickCount(LINK_UUID);
+            long result = statsService.getRealtimeClickCount(TEMP_USER_ID, LINK_UUID);
 
             log.info("===== 실시간 접속자 수 테스트 (값 없음) =====");
             log.info("result={}", result);
@@ -265,7 +265,7 @@ class StatsServiceTest {
 
             log.info("===== 실시간 접속자 수 - 소유권 검증 실패 테스트 =====");
 
-            assertThatThrownBy(() -> statsService.getRealtimeClickCount("someone-elses-link"))
+            assertThatThrownBy(() -> statsService.getRealtimeClickCount(TEMP_USER_ID, "someone-elses-link"))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }

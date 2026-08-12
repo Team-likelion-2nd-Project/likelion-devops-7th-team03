@@ -13,7 +13,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -36,7 +37,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   - run-migration.sh로 마이그레이션이 적용되어 있어야 함
  *   - application-test.yml(또는 application.yml)의 DB 접속 정보가 정상이어야 함
  *
- * TEMP_USER_ID(=1L)는 StatsService의 임시 고정 소유자 id와 반드시 일치해야 한다.
+ * TEMP_USER_ID(=1L)는 이 테스트가 직접 심는 유저(user_id="test-user-uuid-1")의 내부 id다.
+ * CurrentUserArgumentResolver가 SecurityContext의 principal(JWT subject UUID)로
+ * UserRepository를 조회해 이 내부 id를 얻으므로, setUp()에서 실제 JwtAuthenticationFilter와
+ * 동일한 방식으로 SecurityContextHolder에 그 UUID를 심어준다 (@WithMockUser는 principal이
+ * 문자열이 아니라서 CurrentUserArgumentResolver의 instanceof String 체크와 안 맞아 못 씀).
  * 테스트용 링크는 이 유저(id=1) 소유로 직접 INSERT해서 만들고, 끝나면 지운다
  * (기존 links 테이블 데이터에 의존하지 않아 어떤 로컬 DB 상태에서도 재현 가능하게 함).
  */
@@ -44,10 +49,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@WithMockUser(username = "testuser", roles = {"USER"})
 class StatsControllerIntegrationTest {
 
     private static final Long TEMP_USER_ID = 1L;
+    private static final String TEST_USER_UUID = "test-user-uuid-" + TEMP_USER_ID;
     private static final LocalDate YESTERDAY = LocalDate.now().minusDays(1);
     private static final LocalDate DAY_BEFORE_YESTERDAY = LocalDate.now().minusDays(2);
 
@@ -72,6 +77,11 @@ class StatsControllerIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        // 0) JwtAuthenticationFilter와 동일한 방식으로 SecurityContext에 로그인 유저를 심는다.
+        //    CurrentUserArgumentResolver가 principal(String)로 UserRepository를 조회한다.
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(TEST_USER_UUID, null, java.util.List.of()));
+
         // 1) user_id=1(TEMP_USER_ID) 소유의 테스트 전용 링크를 직접 생성
         //    resolveOwnedLink()가 user_id=1 && is_visible=true 조건으로 조회하므로
         //    이 조건을 만족하는 링크가 실제로 있어야 API가 정상 동작한다.
@@ -83,7 +93,7 @@ class StatsControllerIntegrationTest {
                 VALUES (?, ?, ?, ?, 'ACTIVE', NOW(), NOW())
                 ON DUPLICATE KEY UPDATE id = id
                 """,
-                TEMP_USER_ID, "test-user-uuid-" + TEMP_USER_ID, 999999L, "테스트유저");
+                TEMP_USER_ID, TEST_USER_UUID, 999999L, "테스트유저");
 
         jdbcTemplate.update("""
                 INSERT INTO links (link_id, user_id, slug, original_url, is_visible, created_at, updated_at)
@@ -139,6 +149,7 @@ class StatsControllerIntegrationTest {
         jdbcTemplate.update("DELETE FROM link_daily_stats WHERE link_id = ?", testInternalLinkId);
         jdbcTemplate.update("DELETE FROM links WHERE id = ?", testInternalLinkId);
         redisTemplate.delete("click_count:" + testInternalLinkId + ":" + LocalDate.now());
+        SecurityContextHolder.clearContext();
         log.info("===== 테스트 데이터 정리 완료 (linkUuid={}) =====", testLinkUuid);
     }
 

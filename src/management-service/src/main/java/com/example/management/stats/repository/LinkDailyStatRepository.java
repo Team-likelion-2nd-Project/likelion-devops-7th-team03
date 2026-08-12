@@ -1,11 +1,13 @@
-package com.example.management.stats.domain;
+package com.example.management.stats.repository;
 
+import com.example.management.stats.domain.LinkDailyStat;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 public interface LinkDailyStatRepository extends JpaRepository<LinkDailyStat, Long> {
 
@@ -82,4 +84,11 @@ public interface LinkDailyStatRepository extends JpaRepository<LinkDailyStat, Lo
         Long getSumOfDailyVisitors();
         Integer getPeakDailyClicks();
     }
+
+
+
+
+    /** 특정 날짜 단건 조회 (일별 증감률 계산용) */
+    Optional<LinkDailyStat> findByLinkIdAndStatDate(Long linkId, LocalDate statDate);
 }
+

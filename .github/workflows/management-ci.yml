@@ -18,7 +18,6 @@ on:
   push:
     branches: [develop, main]
     paths:
-      # management-service 관련 파일이 바뀔 때만 실행 (다른 서비스만 고쳤을 때 낭비 방지)
       - 'src/management-service/**'
       - '.github/workflows/management-ci.yml'
   pull_request:
@@ -43,14 +42,17 @@ jobs:
           MYSQL_DATABASE: shortlink
         ports:
           - 3306:3306
-        # 컨테이너가 뜨긴 떴어도 MySQL이 완전히 초기화되기 전일 수 있으므로,
-        # ping이 성공할 때까지 최대 10번(5초 간격) 재시도하며 기다린다.
+        # 주의: GitHub Actions의 services.options는 "docker create" 옵션만 지원한다.
+        # --default-time-zone 은 MySQL 서버 자체에 넘기는 인자라 여기서는 못 쓴다
+        # (unknown flag 에러). 그래서 컨테이너는 기본 SYSTEM 타임존으로 뜨고,
+        # 대신 아래 "MySQL 타임존/마이그레이션 적용" 스텝에서 --allow-non-utc로
+        # run-migration.sh의 UTC 검증을 우회한다. 실제 로컬/운영(docker-compose)은
+        # 여전히 UTC로 강제되므로 이 우회는 CI 전용.
         options: >-
           --health-cmd="mysqladmin ping -h localhost"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=10
-          --default-time-zone=+00:00
 
       redis:
         image: redis:7
@@ -64,33 +66,30 @@ jobs:
 
     steps:
       # 1. GitHub 저장소의 코드를 CI 서버(가상 컴퓨터)로 내려받는다.
-      #    이 스텝이 없으면 이후 스텝들이 우리 코드 자체를 볼 수 없다.
       - name: 코드 체크아웃
         uses: actions/checkout@v4
 
-      # 2. CI 서버는 매번 완전히 새로 생성되는 빈 컴퓨터이므로,
-      #    자바 실행에 필요한 JDK를 매 실행마다 새로 설치해줘야 한다.
+      # 2. CI 서버는 매번 완전히 새로 생성되는 빈 컴퓨터이므로 JDK를 매번 새로 설치.
       - name: JDK 17 설치
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # 3. Gradle 의존성을 매번 새로 받으면 느리므로 캐시해서 재사용,
-      #    두 번째 실행부터는 빌드 속도가 훨씬 빨라진다.
+      # 3. Gradle 의존성 캐시 (두 번째 실행부터 빌드 속도 향상)
       - name: Gradle 캐시 설정
         uses: gradle/actions/setup-gradle@v4
 
-      # 4. 로컬에서 손으로 실행했던 run-migration.sh를 CI가 대신 실행.
-      #    위에서 띄운 임시 MySQL 컨테이너 안에 users/links 등 테이블을 만든다.
-      #    (V1~V6 마이그레이션이 여기서 순서대로 다 적용됨)
+      # 4. 로컬의 run-migration.sh를 CI가 대신 실행.
+      #    --allow-non-utc: 위 mysql 서비스가 SYSTEM 타임존으로 뜨기 때문에
+      #    (--default-time-zone을 여기서 못 넣으므로) UTC 검증을 건너뛴다.
       - name: MySQL 타임존/마이그레이션 적용
         working-directory: src/db
         env:
           DB_HOST: 127.0.0.1
           DB_ROOT_USER: root
           DB_ROOT_PASSWORD: root
-          # 이 값들은 run-migration.sh가 shortlink_app 등 계정을 생성할 때 쓰는 비밀번호.
+          # APP_PASSWORD는 run-migration.sh가 shortlink_app 계정을 생성할 때 쓰는 값.
           # 아래 "Gradle 빌드 및 테스트" 스텝의 DB_APP_PASSWORD와 반드시 같은 값이어야
           # 앱이 그 계정으로 정상 로그인할 수 있다.
           APP_PASSWORD: ${{ secrets.DB_APP_PASSWORD }}
@@ -98,13 +97,12 @@ jobs:
           READONLY_PASSWORD: ${{ secrets.DB_READONLY_PASSWORD }}
         run: |
           chmod +x run-migration.sh
-          ./run-migration.sh
+          ./run-migration.sh --allow-non-utc
 
       # 5. 핵심 스텝. ./gradlew build 하나가:
-      #      (1) 코드 컴파일 (에러 있으면 여기서 실패)
-      #      (2) 전체 테스트 실행 (StatsServiceTest, StatsControllerIntegrationTest 등)
-      #      (3) 실행용 jar 파일 생성 (Dockerfile이 이 jar를 그대로 복사해서 씀)
-      #    을 한 번에 처리한다.
+      #      (1) 코드 컴파일  (2) 전체 테스트 실행  (3) 실행용 jar 생성
+      #    을 한 번에 처리한다. (build.gradle에서 plain jar는 비활성화해둠 —
+      #    Dockerfile의 COPY build/libs/*.jar 가 파일 여러 개를 잡는 문제 방지)
       - name: Gradle 빌드 및 테스트
         working-directory: src/management-service
         env:
@@ -123,9 +121,7 @@ jobs:
           chmod +x ./gradlew
           ./gradlew build
 
-      # 6. 테스트가 실패했을 때 "어떤 테스트가 왜 실패했는지" 리포트를 남겨둔다.
-      #    if: always() 는 앞 스텝이 성공하든 실패하든 무조건 이 스텝은 실행하라는 뜻
-      #    (실패 원인 리포트를 놓치지 않기 위함).
+      # 6. 테스트 실패 시에도 원인 파악용 리포트를 남겨둔다.
       - name: 테스트 결과 업로드 (실패 시에도 확인 가능하게)
         if: always()
         uses: actions/upload-artifact@v4
@@ -136,14 +132,10 @@ jobs:
 
       # ===================================================================
       # 여기서부터 도커 이미지 빌드 + ECR push.
-      #
-      # if: github.event_name == 'push' 를 붙인 이유:
-      #   PR을 올릴 때마다 이미지를 ECR에 올리면 저장 공간/비용이 낭비된다.
-      #   develop/main에 실제로 merge(push)된 시점에만 이미지를 만들어 올린다.
+      # if: github.event_name == 'push' — PR 단계에서는 이미지 안 올림(비용/공간 낭비 방지),
+      # develop/main에 실제로 merge된 시점에만 실행.
       # ===================================================================
 
-      # 7. ECR에 로그인하려면 AWS 자격증명이 필요하다.
-      #    AWS_ACCESS_KEY_ID / SECRET은 GitHub Secrets에 미리 등록해둔 값을 사용.
       - name: AWS 자격증명 설정
         if: github.event_name == 'push'
         uses: aws-actions/configure-aws-credentials@v4
@@ -152,18 +144,14 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # 8. ECR 레지스트리 주소(예: 123456789.dkr.ecr.ap-northeast-2.amazonaws.com)를
-      #    이후 스텝에서 쓸 수 있게 로그인 + 값 저장.
       - name: ECR 로그인
         if: github.event_name == 'push'
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      # 9. Dockerfile(management-service/Dockerfile)은 이미 만들어진 jar를
-      #    그대로 복사만 하는 구조이므로, 이 시점엔 위 5번 스텝에서 만든
-      #    build/libs/*.jar가 이미 존재하는 상태여야 한다(순서 중요).
-      #    이미지 태그는 커밋 해시(github.sha)로 붙여서, 나중에 "어느 커밋에서
-      #    만들어진 이미지인지" 추적 가능하게 하고, latest 태그도 같이 붙여둔다.
+      # Dockerfile은 이미 만들어진 jar를 그대로 복사만 하는 구조이므로,
+      # 이 시점엔 5번 스텝에서 만든 build/libs/*.jar가 이미 존재해야 한다(순서 중요).
+      # 이미지 태그는 커밋 해시(github.sha)로 붙여 추적 가능하게 하고, latest도 같이 push.
       - name: 도커 이미지 빌드 및 ECR push
         if: github.event_name == 'push'
         working-directory: src/management-service

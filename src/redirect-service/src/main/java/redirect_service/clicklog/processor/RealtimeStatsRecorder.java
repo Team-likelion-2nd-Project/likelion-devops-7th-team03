@@ -68,7 +68,7 @@ public class RealtimeStatsRecorder {
         }
     }
 
-    @Scheduled(fixedRateString = "${app.realtime-stats.flush-interval}")
+    @Scheduled(fixedRateString = "${app.realtime-stats.flush-interval:5s}")
     public void flush() {
         List<ClickEvent> batch = drain();
         if (batch.isEmpty()) {

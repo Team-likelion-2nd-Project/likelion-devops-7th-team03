@@ -69,10 +69,14 @@ public class StatsController {
     }
 
 
-    /** 실시간 접속자(클릭) 수 조회 — Redis만 조회, DB 안 거침 */
+    /** 오늘(KST) 잠정 클릭·UV 조회 — Redis만 조회하고, UV는 HyperLogLog 근사치다. */
     @GetMapping("/{linkId}/stats/realtime")
     public Map<String, Object> getRealtimeCount(@PathVariable String linkId) {
-        long count = statsService.getRealtimeClickCount(linkId);
-        return Map.of("linkId", linkId, "realtimeClickCount", count);
+        StatsService.RealtimeStats stats = statsService.getRealtimeStats(linkId);
+        return Map.of(
+                "linkId", linkId,
+                "realtimeClickCount", stats.clickCount(),
+                "realtimeUniqueVisitorCount", stats.uniqueVisitorCount()
+        );
     }
 }

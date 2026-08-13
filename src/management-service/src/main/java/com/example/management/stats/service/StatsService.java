@@ -10,16 +10,22 @@ import com.example.management.stats.repository.LinkDailyStatRepository;
 import com.example.management.links.domain.Link;
 import com.example.management.links.repository.LinkRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.core.HyperLogLogOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 public class StatsService {
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+    // redirect-service RealtimeStatsRecorder와 공유하는 Redis key contract다.
+    private static final String CLICKS_KEY_PATTERN = "stats:%s:link:%d:clicks";
+    private static final String UNIQUE_VISITORS_KEY_PATTERN = "stats:%s:link:%d:uv";
     // TODO: kakao-login merge 후 SecurityContext에서 실제 userId(UUID)를 꺼내
     // UserRepository로 내부 id 조회하는 방식으로 교체할 것. 지금은 임시 고정값.
     private static final Long TEMP_USER_ID = 1L;
@@ -132,15 +138,43 @@ public class StatsService {
     /**
      * 실시간 접속자(클릭) 수 조회 — DB를 전혀 거치지 않고 Redis만 조회한다.
      * redirector가 클릭마다 INCR로 올려둔 값을 그대로 읽기만 함.
-     * (키 형식: click_count:{내부 link_id}:{date})
+     * (키 형식: stats:{KST date}:link:{내부 link_id}:clicks)
      * 소유권 검증은 여기서도 동일하게 resolveOwnedLink()로 처리한다
      * (링크 id만 알면 남의 링크 실시간 클릭수를 볼 수 있는 문제를 막기 위함).
      */
     public long getRealtimeClickCount(String linkUuid) {
         Link link = resolveOwnedLink(linkUuid);
-        String key = "click_count:" + link.getId() + ":" + LocalDate.now();
+        String key = clicksKey(LocalDate.now(KST), link.getId());
         String value = redisTemplate.opsForValue().get(key);
         return value == null ? 0L : Long.parseLong(value);
+    }
+
+    /** 오늘(KST) 잠정 UV를 Redis HyperLogLog에서 근사치로 읽는다. */
+    public long getRealtimeUniqueVisitorCount(String linkUuid) {
+        Link link = resolveOwnedLink(linkUuid);
+        return redisTemplate.opsForHyperLogLog()
+                .size(uniqueVisitorsKey(LocalDate.now(KST), link.getId()));
+    }
+
+    /** 대시보드 실시간 endpoint가 소유권을 한 번만 확인하도록 click·UV를 함께 읽는다. */
+    public RealtimeStats getRealtimeStats(String linkUuid) {
+        Link link = resolveOwnedLink(linkUuid);
+        LocalDate today = LocalDate.now(KST);
+        String clicks = redisTemplate.opsForValue().get(clicksKey(today, link.getId()));
+        HyperLogLogOperations<String, String> hyperLogLog = redisTemplate.opsForHyperLogLog();
+        long uniqueVisitors = hyperLogLog.size(uniqueVisitorsKey(today, link.getId()));
+        return new RealtimeStats(clicks == null ? 0L : Long.parseLong(clicks), uniqueVisitors);
+    }
+
+    public record RealtimeStats(long clickCount, long uniqueVisitorCount) {
+    }
+
+    private String clicksKey(LocalDate date, long linkId) {
+        return CLICKS_KEY_PATTERN.formatted(date, linkId);
+    }
+
+    private String uniqueVisitorsKey(LocalDate date, long linkId) {
+        return UNIQUE_VISITORS_KEY_PATTERN.formatted(date, linkId);
     }
 
     private Link resolveOwnedLink(String linkUuid) {

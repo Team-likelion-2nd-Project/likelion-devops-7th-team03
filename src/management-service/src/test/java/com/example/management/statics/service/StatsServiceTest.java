@@ -18,10 +18,12 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.HyperLogLogOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -43,6 +45,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class StatsServiceTest {
 
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final Long TEMP_USER_ID = 1L;
     private static final String LINK_UUID = "550e8400-e29b-41d4-a716-446655440000";
     private static final Long INTERNAL_LINK_ID = 10L;
@@ -61,6 +64,9 @@ class StatsServiceTest {
 
     @Mock
     private ValueOperations<String, String> valueOperations;
+
+    @Mock
+    private HyperLogLogOperations<String, String> hyperLogLogOperations;
 
     @InjectMocks
     private StatsService statsService;
@@ -228,7 +234,7 @@ class StatsServiceTest {
         @DisplayName("Redis에 값이 있으면 그 값을 그대로 반환한다 (내부 id 기준 키 사용)")
         void returnsValueWhenKeyExists() {
             mockOwnedLink();
-            String expectedKey = "click_count:" + INTERNAL_LINK_ID + ":" + LocalDate.now();
+            String expectedKey = "stats:%s:link:%d:clicks".formatted(LocalDate.now(KST), INTERNAL_LINK_ID);
 
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(valueOperations.get(expectedKey)).thenReturn("42");
@@ -255,6 +261,19 @@ class StatsServiceTest {
             log.info("result={}", result);
 
             assertThat(result).isZero();
+        }
+
+        @Test
+        @DisplayName("Redis HyperLogLog에서 오늘 KST 기준 UV 근사치를 읽는다")
+        void returnsUniqueVisitorsFromHyperLogLog() {
+            mockOwnedLink();
+            String expectedKey = "stats:%s:link:%d:uv".formatted(LocalDate.now(KST), INTERNAL_LINK_ID);
+            when(redisTemplate.opsForHyperLogLog()).thenReturn(hyperLogLogOperations);
+            when(hyperLogLogOperations.size(expectedKey)).thenReturn(37L);
+
+            long result = statsService.getRealtimeUniqueVisitorCount(LINK_UUID);
+
+            assertThat(result).isEqualTo(37L);
         }
 
         @Test

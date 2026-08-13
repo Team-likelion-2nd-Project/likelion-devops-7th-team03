@@ -18,6 +18,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -46,6 +47,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @WithMockUser(username = "testuser", roles = {"USER"})
 class StatsControllerIntegrationTest {
+
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     private static final Long TEMP_USER_ID = 1L;
     private static final LocalDate YESTERDAY = LocalDate.now().minusDays(1);
@@ -130,7 +133,9 @@ class StatsControllerIntegrationTest {
         // 4) 실시간 카운터 테스트 데이터
         //    주의: Redis 키는 "외부 UUID"가 아니라 "내부 id" 기준이다 (StatsService 구현 참조)
         redisTemplate.opsForValue().set(
-                "click_count:" + testInternalLinkId + ":" + LocalDate.now(), "17");
+                "stats:" + LocalDate.now(KST) + ":link:" + testInternalLinkId + ":clicks", "17");
+        redisTemplate.opsForHyperLogLog().add(
+                "stats:" + LocalDate.now(KST) + ":link:" + testInternalLinkId + ":uv", "visitor-1");
     }
 
     @AfterEach
@@ -138,7 +143,8 @@ class StatsControllerIntegrationTest {
         jdbcTemplate.update("DELETE FROM link_daily_dimension_stats WHERE link_id = ?", testInternalLinkId);
         jdbcTemplate.update("DELETE FROM link_daily_stats WHERE link_id = ?", testInternalLinkId);
         jdbcTemplate.update("DELETE FROM links WHERE id = ?", testInternalLinkId);
-        redisTemplate.delete("click_count:" + testInternalLinkId + ":" + LocalDate.now());
+        redisTemplate.delete("stats:" + LocalDate.now(KST) + ":link:" + testInternalLinkId + ":clicks");
+        redisTemplate.delete("stats:" + LocalDate.now(KST) + ":link:" + testInternalLinkId + ":uv");
         log.info("===== 테스트 데이터 정리 완료 (linkUuid={}) =====", testLinkUuid);
     }
 
@@ -179,6 +185,7 @@ class StatsControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.linkId").value(testLinkUuid))
                 .andExpect(jsonPath("$.realtimeClickCount").value(17))
+                .andExpect(jsonPath("$.realtimeUniqueVisitorCount").value(1))
                 .andReturn();
 
         log.info("===== 실시간 접속자 수 API 테스트 성공 =====");

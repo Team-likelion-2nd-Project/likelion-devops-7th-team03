@@ -9,7 +9,7 @@ const PAGE_SIZE = 20
 export function Dashboard() {
   const [page, setPage] = useState(0)
   const [data, setData] = useState(null)
-  const [editingId, setEditingId] = useState(null)
+  const [editingLink, setEditingLink] = useState(null)
 
   const load = useCallback(async () => {
     const res = await listLinks(page, PAGE_SIZE)
@@ -39,7 +39,7 @@ export function Dashboard() {
         expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : undefined,
       })
       toast('링크를 수정했습니다.', 'success')
-      setEditingId(null)
+      setEditingLink(null)
       load()
     } catch (err) {
       toast(err instanceof ApiError ? err.message : '수정에 실패했습니다.', 'error')
@@ -71,6 +71,7 @@ export function Dashboard() {
               <tr>
                 <th>단축 URL</th>
                 <th>원본 URL</th>
+                <th>제목</th>
                 <th>상태</th>
                 <th>만료일</th>
                 <th>생성일</th>
@@ -78,45 +79,37 @@ export function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {links.map((link) =>
-                editingId === link.linkId ? (
-                  <EditRow
-                    key={link.linkId}
-                    link={link}
-                    onCancel={() => setEditingId(null)}
-                    onSave={(form) => handleSaveEdit(link, form)}
-                  />
-                ) : (
-                  <tr key={link.linkId}>
-                    <td>
-                      <a href={link.shortUrl} target="_blank" rel="noreferrer">
-                        {link.shortUrl}
-                      </a>
-                    </td>
-                    <td className="table__url" title={link.originalUrl}>
-                      {link.title || link.originalUrl}
-                    </td>
-                    <td>
-                      <span className={`badge ${isExpired(link.expiresAt) ? 'badge--off' : 'badge--good'}`}>
-                        {isExpired(link.expiresAt) ? '만료' : '활성'}
-                      </span>
-                    </td>
-                    <td className="table__date">{formatDate(link.expiresAt)}</td>
-                    <td className="table__date">{formatDate(link.createdAt)}</td>
-                    <td className="table__actions">
-                      <Link className="btn btn--ghost btn--sm" to={`/links/${link.linkId}/stats`}>
-                        통계
-                      </Link>
-                      <button className="btn btn--ghost btn--sm" onClick={() => setEditingId(link.linkId)}>
-                        수정
-                      </button>
-                      <button className="btn btn--danger btn--sm" onClick={() => handleDelete(link)}>
-                        삭제
-                      </button>
-                    </td>
-                  </tr>
-                )
-              )}
+              {links.map((link) => (
+                <tr key={link.linkId}>
+                  <td className="table__shorturl" title={link.shortUrl}>
+                    <a href={link.shortUrl} target="_blank" rel="noreferrer">
+                      {link.shortUrl}
+                    </a>
+                  </td>
+                  <td className="table__url" title={link.originalUrl}>
+                    {link.originalUrl}
+                  </td>
+                  <td>{link.title || '-'}</td>
+                  <td>
+                    <span className={`badge ${isExpired(link.expiresAt) ? 'badge--off' : 'badge--good'}`}>
+                      {isExpired(link.expiresAt) ? '만료' : '활성'}
+                    </span>
+                  </td>
+                  <td className="table__date">{formatDate(link.expiresAt)}</td>
+                  <td className="table__date">{formatDate(link.createdAt)}</td>
+                  <td className="table__actions">
+                    <Link className="btn btn--ghost btn--sm" to={`/links/${link.linkId}/stats`}>
+                      통계
+                    </Link>
+                    <button className="btn btn--ghost btn--sm" onClick={() => setEditingLink(link)}>
+                      수정
+                    </button>
+                    <button className="btn btn--danger btn--sm" onClick={() => handleDelete(link)}>
+                      삭제
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
 
@@ -139,31 +132,49 @@ export function Dashboard() {
           )}
         </div>
       )}
+
+      {editingLink && (
+        <EditLinkModal
+          link={editingLink}
+          onClose={() => setEditingLink(null)}
+          onSave={(form) => handleSaveEdit(editingLink, form)}
+        />
+      )}
     </div>
   )
 }
 
-function EditRow({ link, onCancel, onSave }) {
+function EditLinkModal({ link, onClose, onSave }) {
   const [originalUrl, setOriginalUrl] = useState(link.originalUrl)
   const [title, setTitle] = useState(link.title || '')
   const [expiresAt, setExpiresAt] = useState(link.expiresAt ? link.expiresAt.slice(0, 16) : '')
 
   return (
-    <tr>
-      <td colSpan={6}>
-        <div className="inline-form">
-          <input value={originalUrl} onChange={(e) => setOriginalUrl(e.target.value)} placeholder="원본 URL" />
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="제목" maxLength={100} />
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="card modal-card" onClick={(e) => e.stopPropagation()}>
+        <h2>링크 수정</h2>
+        <label className="field">
+          <span>원본 URL</span>
+          <input value={originalUrl} onChange={(e) => setOriginalUrl(e.target.value)} />
+        </label>
+        <label className="field">
+          <span>제목</span>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} />
+        </label>
+        <label className="field">
+          <span>만료일</span>
           <input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
-          <button className="btn btn--primary btn--sm" onClick={() => onSave({ originalUrl, title, expiresAt })}>
-            저장
-          </button>
-          <button className="btn btn--ghost btn--sm" onClick={onCancel}>
+        </label>
+        <div className="modal-actions">
+          <button className="btn btn--ghost" onClick={onClose}>
             취소
           </button>
+          <button className="btn btn--primary" onClick={() => onSave({ originalUrl, title, expiresAt })}>
+            저장
+          </button>
         </div>
-      </td>
-    </tr>
+      </div>
+    </div>
   )
 }
 

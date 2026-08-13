@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ResponsiveContainer,
   LineChart,
@@ -12,6 +12,7 @@ import {
   Legend,
 } from 'recharts'
 import { getDailyStats, compareLinks, getReferrerStats } from '../api/stats'
+import { listLinks } from '../api/links'
 import { ApiError } from '../api/http'
 import { toast } from '../components/Toast'
 
@@ -26,10 +27,11 @@ function daysAgoIso(n) {
 }
 
 // 백엔드(StatsController)에 실제로 붙는 통계 대시보드. 단건 통계는 대시보드의
-// '통계' 버튼(/links/:id/stats)을 쓰고, 여기는 여러 링크를 UUID로 직접 비교할 때 쓴다.
+// '통계' 버튼(/links/:id/stats)을 쓰고, 여기는 여러 링크를 골라 직접 비교할 때 쓴다.
 export function StatsDashboard() {
+  const [links, setLinks] = useState([])
   const [linkId, setLinkId] = useState('')
-  const [compareIds, setCompareIds] = useState('')
+  const [compareIds, setCompareIds] = useState([])
   const [from, setFrom] = useState(daysAgoIso(13))
   const [to, setTo] = useState(todayIso())
 
@@ -38,26 +40,28 @@ export function StatsDashboard() {
   const [compareRows, setCompareRows] = useState(null)
   const [loading, setLoading] = useState(false)
 
+  // ponytail: 목록 API가 페이지네이션이라 최근 100개만 불러옴. 그 이상이면 페이지 넘김 UI 추가 필요.
+  useEffect(() => {
+    listLinks(0, 100)
+      .then((res) => setLinks(res.links))
+      .catch(() => toast('링크 목록을 불러오지 못했습니다.', 'error'))
+  }, [])
+
   async function handleLoad(e) {
     e.preventDefault()
-    if (!linkId.trim()) {
-      toast('조회할 링크 UUID를 입력해주세요.', 'error')
+    if (!linkId) {
+      toast('조회할 링크를 선택해주세요.', 'error')
       return
     }
     setLoading(true)
     try {
       const [dailyRes, referrerRes] = await Promise.all([
-        getDailyStats(linkId.trim(), from, to),
-        getReferrerStats(linkId.trim(), from, to),
+        getDailyStats(linkId, from, to),
+        getReferrerStats(linkId, from, to),
       ])
       setDaily(dailyRes)
       setReferrers(referrerRes)
-
-      const ids = compareIds
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
-      setCompareRows(ids.length > 0 ? await compareLinks(ids, from, to) : null)
+      setCompareRows(compareIds.length > 0 ? await compareLinks(compareIds, from, to) : null)
     } catch (err) {
       const message = err instanceof ApiError ? err.message : '통계를 불러오지 못했습니다.'
       toast(message, 'error')
@@ -78,25 +82,18 @@ export function StatsDashboard() {
         </div>
       </div>
 
-      <form className="card" onSubmit={handleLoad} style={{ display: 'grid', gap: 12 }}>
+      <form className="card" onSubmit={handleLoad} style={{ display: 'grid', gap: 16 }}>
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
           <label className="field">
-            <span>링크 UUID</span>
-            <input
-              type="text"
-              placeholder="예: 3f9e1c2a-..."
-              value={linkId}
-              onChange={(e) => setLinkId(e.target.value)}
-            />
-          </label>
-          <label className="field">
-            <span>비교할 링크 UUID들 (쉼표로 구분, 선택)</span>
-            <input
-              type="text"
-              placeholder="uuid1, uuid2, ..."
-              value={compareIds}
-              onChange={(e) => setCompareIds(e.target.value)}
-            />
+            <span>링크</span>
+            <select value={linkId} onChange={(e) => setLinkId(e.target.value)}>
+              <option value="">링크를 선택하세요</option>
+              {links.map((l) => (
+                <option key={l.linkId} value={l.linkId}>
+                  {l.title || l.shortUrl}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field">
             <span>시작일</span>
@@ -107,7 +104,32 @@ export function StatsDashboard() {
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} required />
           </label>
         </div>
-        <button className="btn btn--primary" disabled={loading}>
+
+        <div className="field">
+          <span>비교할 링크 (선택, 클릭해서 토글)</span>
+          <div className="chip-group">
+            {links.length === 0 && <span className="form-hint">비교할 링크가 없습니다.</span>}
+            {links.map((l) => {
+              const active = compareIds.includes(l.linkId)
+              return (
+                <button
+                  key={l.linkId}
+                  type="button"
+                  className={`chip ${active ? 'chip--active' : ''}`}
+                  onClick={() =>
+                    setCompareIds((prev) =>
+                      active ? prev.filter((id) => id !== l.linkId) : [...prev, l.linkId]
+                    )
+                  }
+                >
+                  {l.title || l.shortUrl}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <button className="btn btn--primary" disabled={loading} style={{ justifySelf: 'start' }}>
           {loading ? '조회 중...' : '조회'}
         </button>
       </form>

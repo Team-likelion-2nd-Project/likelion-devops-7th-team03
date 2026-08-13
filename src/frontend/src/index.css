@@ -248,7 +248,8 @@ h2 {
   font-size: 0.85rem;
   color: var(--text-secondary);
 }
-.field input {
+.field input,
+.field select {
   padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -256,9 +257,34 @@ h2 {
   color: var(--text-primary);
   font-size: 0.95rem;
 }
-.field input:focus {
+.field input:focus,
+.field select:focus {
   outline: 2px solid var(--series-1);
   outline-offset: 1px;
+}
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--page-plane);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.chip:hover {
+  border-color: var(--series-1);
+}
+.chip--active {
+  background: var(--series-1);
+  border-color: var(--series-1);
+  color: white;
 }
 .field-row {
   display: flex;
@@ -345,7 +371,13 @@ h2 {
   letter-spacing: 0.02em;
 }
 .table__url {
-  max-width: 320px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.table__shorturl {
+  max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -793,4 +825,9 @@ h2 {
     width: 100%;
     justify-content: space-between;
   }
+}
+.inline-form__label {
+  color: var(--muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
 }

@@ -9,11 +9,18 @@ const PAGE_SIZE = 20
 export function Dashboard() {
   const [page, setPage] = useState(0)
   const [data, setData] = useState(null)
+  const [loadError, setLoadError] = useState(false)
   const [editingLink, setEditingLink] = useState(null)
 
   const load = useCallback(async () => {
-    const res = await listLinks(page, PAGE_SIZE)
-    setData(res)
+    setLoadError(false)
+    try {
+      const res = await listLinks(page, PAGE_SIZE)
+      setData(res)
+    } catch (err) {
+      setLoadError(true)
+      toast(err instanceof ApiError ? err.message : '링크 목록을 불러오지 못했습니다.', 'error')
+    }
   }, [page])
 
   useEffect(() => {
@@ -44,6 +51,19 @@ export function Dashboard() {
     } catch (err) {
       toast(err instanceof ApiError ? err.message : '수정에 실패했습니다.', 'error')
     }
+  }
+
+  if (loadError) {
+    return (
+      <div className="page">
+        <div className="card empty-state">
+          링크 목록을 불러오지 못했습니다.{' '}
+          <button className="btn btn--ghost btn--sm" onClick={load}>
+            다시 시도
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (data === null) return <div className="page">불러오는 중...</div>

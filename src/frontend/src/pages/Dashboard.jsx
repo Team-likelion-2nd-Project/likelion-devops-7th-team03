@@ -198,8 +198,9 @@ function EditLinkModal({ link, onClose, onSave }) {
   )
 }
 
+// 백엔드 Link.isExpired()와 동일한 경계값(now >= expiresAt이면 만료)을 사용한다.
 function isExpired(expiresAt) {
-  return Boolean(expiresAt) && new Date(expiresAt).getTime() < Date.now()
+  return Boolean(expiresAt) && Date.now() >= new Date(expiresAt).getTime()
 }
 
 function formatDate(iso) {

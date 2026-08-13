@@ -1,4 +1,4 @@
-package com.example.management.statics.service;
+package com.example.management.stats.service;
 
 import com.example.management.links.domain.Link;
 import com.example.management.links.repository.LinkRepository;
@@ -8,7 +8,6 @@ import com.example.management.stats.dto.DailyChangeResponse;
 import com.example.management.stats.dto.DimensionBreakdownResponse;
 import com.example.management.stats.repository.LinkDailyDimensionStatRepository;
 import com.example.management.stats.repository.LinkDailyStatRepository;
-import com.example.management.stats.service.StatsService;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

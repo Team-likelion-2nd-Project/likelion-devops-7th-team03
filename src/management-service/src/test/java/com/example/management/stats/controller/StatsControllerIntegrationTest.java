@@ -1,4 +1,4 @@
-package com.example.management.statics.controller;
+package com.example.management.stats.controller;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +33,7 @@ class StatsControllerIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+    @Autowired
     private StringRedisTemplate redisTemplate;
     @Autowired
     private JdbcTemplate jdbcTemplate;

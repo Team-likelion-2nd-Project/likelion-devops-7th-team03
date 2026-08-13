@@ -1,23 +1,32 @@
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+      group:
+        readiness:
+          include: readinessState, db, redis
+
 spring:
   application:
     name: redirect-service
 
   datasource:
-    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:shortlink}?serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/${DB_NAME}
     username: ${DB_APP_USER:shortlink_app}
     password: ${DB_APP_PASSWORD}
 
   jpa:
     hibernate:
       ddl-auto: validate    # 스키마는 run-migration.sh가 만듦. 앱은 검증만
-    show-sql: false
-    properties:
-      hibernate:
-        format_sql: true
 
   flyway:
-    enabled: false          # 마이그레이션은 run-migration.sh가 실행 (README "권장" 방식)
-    baseline-on-migrate: true
+    enabled: false          # 마이그레이션은 run-migration.sh가 실행 (README "권장" 방식 — EKS 멀티 파드 동시 기동 시 락 대기로 인한 헬스체크 타임아웃 방지)
 
   data:
     redis:

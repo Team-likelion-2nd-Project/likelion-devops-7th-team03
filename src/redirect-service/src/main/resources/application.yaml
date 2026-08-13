@@ -31,6 +31,12 @@ app:
   click-log:
     secure-cookie: ${CLICK_LOG_SECURE_COOKIE:false}
 
+  realtime-stats:
+    # Redis는 당일 잠정 통계만 보관한다. 원본 클릭 이벤트가 최종 집계의 기준이다.
+    retention: ${REALTIME_STATS_RETENTION:3d}
+    flush-interval: ${REALTIME_STATS_FLUSH_INTERVAL:5s}
+    buffer-capacity: ${REALTIME_STATS_BUFFER_CAPACITY:100000}
+
 logging:
   level:
     redirect_service.redirect: ${REDIRECT_LOG_LEVEL:INFO}

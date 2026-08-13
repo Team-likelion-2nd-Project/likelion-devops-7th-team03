@@ -1,4 +1,4 @@
-package redirect_service.clicklog.referrer;
+package redirect_service.clicklog.resolver;
 
 import org.springframework.stereotype.Component;
 

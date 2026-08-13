@@ -1,4 +1,4 @@
-package redirect_service.clicklog.useragent;
+package redirect_service.clicklog.resolver;
 
 public record UserAgentInfo(
         String deviceType,

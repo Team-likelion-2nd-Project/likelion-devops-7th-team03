@@ -1,4 +1,4 @@
-package redirect_service.clicklog.useragent;
+package redirect_service.clicklog.resolver;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

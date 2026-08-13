@@ -1,8 +1,8 @@
-package redirect_service.clicklog.client;
+package redirect_service.clicklog.resolver;
 
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import redirect_service.clicklog.event.ClickRequestSnapshot;
 import redirect_service.config.ClickLogProperties;
 
 @Component
@@ -11,13 +11,13 @@ public class ClientIpResolver {
 
     private final ClickLogProperties properties;
 
-    public String resolve(HttpServletRequest request) {
+    public String resolve(ClickRequestSnapshot request) {
         if (properties.isTrustForwardedFor()) {
-            String forwardedFor = request.getHeader("X-Forwarded-For");
+            String forwardedFor = request.forwardedFor();
             if (forwardedFor != null && !forwardedFor.isBlank()) {
                 return forwardedFor.split(",", 2)[0].trim();
             }
         }
-        return request.getRemoteAddr();
+        return request.remoteAddress();
     }
 }

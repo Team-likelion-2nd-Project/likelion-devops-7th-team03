@@ -1,11 +1,11 @@
-package redirect_service.clicklog;
+package redirect_service.clicklog.event;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
 
-/** DB/메시지 전송 전 단계에서 구조화 로그로만 남기는 클릭 이벤트다. */
-public record ClickEventLog(
+/** 클릭 로그 소비자가 공통으로 사용하는, 해석이 끝난 이벤트다. */
+public record ClickEvent(
         Long linkId,
-        Instant clickedAt,
+        LocalDateTime clickedAt,
         String visitorId,
         String clientIp,
         String language,

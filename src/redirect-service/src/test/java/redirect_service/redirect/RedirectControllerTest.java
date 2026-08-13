@@ -3,8 +3,7 @@ package redirect_service.redirect;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
-import redirect_service.clicklog.ClickLogService;
-import redirect_service.clicklog.visitor.ResolvedVisitor;
+import redirect_service.config.ClickLogProperties;
 
 import java.net.URI;
 
@@ -19,20 +18,31 @@ class RedirectControllerTest {
     @DisplayName("서비스가 반환한 URL을 Location 헤더에 담아 302를 반환한다")
     void redirectsToUrlReturnedByService() {
         RedirectService redirectService = mock(RedirectService.class);
-        ClickLogService clickLogService = mock(ClickLogService.class);
-        RedirectController controller = new RedirectController(redirectService, clickLogService);
+        ClickLogProperties properties = new ClickLogProperties();
+        VisitorIdResolver visitorIdResolver = mock(VisitorIdResolver.class);
+        RedirectController controller = new RedirectController(redirectService, properties, visitorIdResolver);
         MockHttpServletRequest request = new MockHttpServletRequest();
-        when(redirectService.findRedirectTarget("abc123"))
+        request.setRemoteAddr("203.0.113.10");
+        request.addHeader("User-Agent", "Mozilla/5.0");
+        when(visitorIdResolver.resolve(null)).thenReturn("visitor-id");
+        when(visitorIdResolver.needsCookie(null)).thenReturn(true);
+        when(visitorIdResolver.setCookieHeader("visitor-id"))
+                .thenReturn("visitor_id=visitor-id; Path=/");
+        when(redirectService.redirect(org.mockito.ArgumentMatchers.any(RedirectRequest.class)))
                 .thenReturn(new RedirectTarget(1L, "https://example.com/page"));
-        when(clickLogService.capture(1L, request))
-                .thenReturn(new ResolvedVisitor("visitor-id", "visitor_id=visitor-id; Path=/"));
 
         var response = controller.redirect("abc123", request);
 
         assertThat(response.getStatusCode().value()).isEqualTo(302);
         assertThat(response.getHeaders().getLocation()).isEqualTo(URI.create("https://example.com/page"));
         assertThat(response.getHeaders().getFirst("Set-Cookie")).contains("visitor_id=visitor-id");
-        verify(redirectService).findRedirectTarget("abc123");
-        verify(clickLogService).capture(1L, request);
+        org.mockito.ArgumentCaptor<RedirectRequest> requestCaptor =
+                org.mockito.ArgumentCaptor.forClass(RedirectRequest.class);
+        verify(redirectService).redirect(requestCaptor.capture());
+        assertThat(requestCaptor.getValue())
+                .extracting(RedirectRequest::slug, RedirectRequest::visitorId,
+                        RedirectRequest::remoteAddress, RedirectRequest::userAgent)
+                .containsExactly("abc123", "visitor-id", "203.0.113.10", "Mozilla/5.0");
+        assertThat(requestCaptor.getValue().occurredAt()).isNotNull();
     }
 }

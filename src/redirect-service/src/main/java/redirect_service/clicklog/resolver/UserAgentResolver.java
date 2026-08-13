@@ -1,4 +1,4 @@
-package redirect_service.clicklog.useragent;
+package redirect_service.clicklog.resolver;
 
 import nl.basjes.parse.useragent.UserAgentAnalyzer;
 import org.springframework.stereotype.Component;

@@ -15,19 +15,19 @@ import java.util.concurrent.ThreadPoolExecutor;
 public class AsyncEventConfig {
 
     /** 모든 부가 이벤트 처리는 bounded 큐에서 실행하며, 포화되어도 302 응답을 막지 않는다. */
-    @Bean(name = "clickEventEnrichmentExecutor")
-    public Executor clickEventEnrichmentExecutor() {
-        return executor("click-enrichment-", 2, 4, 10_000);
+    @Bean(name = "clickEventAssemblerExecutor")
+    public Executor ClickEventAssemblerExecutor() {
+        return executor("click-assembler-", 2, 4, 10_000);
     }
 
-    @Bean(name = "clickLogExecutor")
-    public Executor clickLogExecutor() {
-        return executor("click-log-", 1, 2, 10_000);
+    @Bean(name = "clickEventLoggerExecutor")
+    public Executor ClickEventLoggerExecutor() {
+        return executor("click-event-logger-", 1, 2, 10_000);
     }
 
-    @Bean(name = "redisStatsExecutor")
-    public Executor redisStatsExecutor() {
-        return executor("redis-stats-", 1, 2, 10_000);
+    @Bean(name = "realtimeStatsRecorderExecutor")
+    public Executor RealtimeStatsRecorderExecutor() {
+        return executor("realtime=stats-recorder-", 1, 2, 10_000);
     }
 
     private Executor executor(String threadNamePrefix, int corePoolSize, int maxPoolSize, int queueCapacity) {

@@ -62,7 +62,6 @@ public class RedirectService {
         if (!entry.isRedirectable(now)) {
             throw new RedirectNotFoundException();
         }
-        
 
         // 3. Cache Hit & 정상 리다이렉트 가능
         return Optional.of(entry.toRedirectTarget());

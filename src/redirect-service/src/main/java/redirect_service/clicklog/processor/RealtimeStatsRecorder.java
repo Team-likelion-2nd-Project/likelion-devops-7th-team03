@@ -57,7 +57,7 @@ public class RealtimeStatsRecorder {
         this.pendingEvents = new ArrayBlockingQueue<>(properties.getBufferCapacity());
     }
 
-    @Async("redisStatsExecutor")
+    @Async("realtimeStatsRecorderExecutor")
     @EventListener
     public void onClick(ClickEvent clickEvent) {
         if (!pendingEvents.offer(clickEvent)) {

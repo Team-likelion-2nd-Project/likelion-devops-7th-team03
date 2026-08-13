@@ -27,7 +27,7 @@ public class ClickEventAssembler {
     private final ReferrerCategoryResolver referrerCategoryResolver;
     private final ApplicationEventPublisher eventPublisher;
 
-    @Async("clickEventEnrichmentExecutor")
+    @Async("clickEventAssemblerExecutor")
     @EventListener
     public void onRedirectSucceeded(RedirectSucceededEvent event) {
         ClickRequestSnapshot request = event.request();

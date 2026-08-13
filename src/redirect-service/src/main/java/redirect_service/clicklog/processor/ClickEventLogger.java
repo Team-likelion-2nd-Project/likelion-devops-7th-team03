@@ -17,7 +17,7 @@ public class ClickEventLogger {
 
     private final JsonMapper jsonMapper;
 
-    @Async("clickLogExecutor")
+    @Async("clickEventLoggerExecutor")
     @EventListener
     public void onClick(ClickEvent clickEvent) {
         try {

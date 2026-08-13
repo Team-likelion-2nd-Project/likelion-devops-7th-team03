@@ -36,14 +36,15 @@ import static org.mockito.Mockito.when;
  * DB/Redis를 실제로 띄우지 않고 Repository/RedisTemplate을 Mock으로 대체해서
  * "계산 로직 + 소유권 검증 흐름"만 검증한다.
  *
- * TEMP_USER_ID(=1L)는 StatsService 내부의 임시 고정값과 반드시 일치시켜야 한다
- * (kakao-login 완성 후 SecurityContext 기반으로 교체될 예정 — StatsService의 TODO 참조).
+ * TEST_USER_ID(=1L)는 이 테스트가 호출부에서 넘기는 임의의 userId 값이다.
+ * StatsService는 @CurrentUser로 주입된 userId를 파라미터로만 받으므로
+ * 실제 값과 무관하게 mockOwnedLink()에서 세팅한 값과만 일치하면 된다.
  */
 @Slf4j
 @ExtendWith(MockitoExtension.class)
 class StatsServiceTest {
 
-    private static final Long TEMP_USER_ID = 1L;
+    private static final Long TEST_USER_ID = 1L;
     private static final String LINK_UUID = "550e8400-e29b-41d4-a716-446655440000";
     private static final Long INTERNAL_LINK_ID = 10L;
 
@@ -69,7 +70,7 @@ class StatsServiceTest {
     private void mockOwnedLink() {
         Link mockLink = Mockito.mock(Link.class);
         when(mockLink.getId()).thenReturn(INTERNAL_LINK_ID);
-        when(linkRepository.findByLinkIdAndUserIdAndIsVisibleTrue(LINK_UUID, TEMP_USER_ID))
+        when(linkRepository.findByLinkIdAndUserIdAndIsVisibleTrue(LINK_UUID, TEST_USER_ID))
                 .thenReturn(Optional.of(mockLink));
     }
 
@@ -91,7 +92,7 @@ class StatsServiceTest {
                     .thenReturn(Optional.of(stat(dayBeforeYesterday, 100, 80)));
 
             // when
-            DailyChangeResponse response = statsService.getDailyChange(LINK_UUID, yesterday);
+            DailyChangeResponse response = statsService.getDailyChange(TEST_USER_ID, LINK_UUID, yesterday);
 
             log.info("===== 일별 증감률 테스트 (증가 케이스) =====");
             log.info("linkId={}, baseDate={}", response.linkId(), response.baseDate());
@@ -119,7 +120,7 @@ class StatsServiceTest {
             when(dailyStatRepository.findByLinkIdAndStatDate(INTERNAL_LINK_ID, dayBeforeYesterday))
                     .thenReturn(Optional.empty());
 
-            DailyChangeResponse response = statsService.getDailyChange(LINK_UUID, yesterday);
+            DailyChangeResponse response = statsService.getDailyChange(TEST_USER_ID, LINK_UUID, yesterday);
 
             log.info("===== 일별 증감률 테스트 (그제 데이터 없음) =====");
             log.info("clicks: base={}, previous={}, changeRate={}%",
@@ -141,7 +142,7 @@ class StatsServiceTest {
             when(dailyStatRepository.findByLinkIdAndStatDate(INTERNAL_LINK_ID, dayBeforeYesterday))
                     .thenReturn(Optional.of(stat(dayBeforeYesterday, 0, 0)));
 
-            DailyChangeResponse response = statsService.getDailyChange(LINK_UUID, yesterday);
+            DailyChangeResponse response = statsService.getDailyChange(TEST_USER_ID, LINK_UUID, yesterday);
 
             log.info("===== 일별 증감률 테스트 (양쪽 0) =====");
             log.info("changeRate={}%", response.clicks().changeRate());
@@ -152,12 +153,12 @@ class StatsServiceTest {
         @Test
         @DisplayName("소유하지 않은/존재하지 않는 링크면 IllegalArgumentException이 발생한다")
         void notOwnedLink_throwsException() {
-            when(linkRepository.findByLinkIdAndUserIdAndIsVisibleTrue(anyString(), eq(TEMP_USER_ID)))
+            when(linkRepository.findByLinkIdAndUserIdAndIsVisibleTrue(anyString(), eq(TEST_USER_ID)))
                     .thenReturn(Optional.empty());
 
             log.info("===== 소유권 검증 실패 테스트 =====");
 
-            assertThatThrownBy(() -> statsService.getDailyChange("not-owned-uuid", LocalDate.now()))
+            assertThatThrownBy(() -> statsService.getDailyChange(TEST_USER_ID, "not-owned-uuid", LocalDate.now()))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("not-owned-uuid");
         }
@@ -182,7 +183,7 @@ class StatsServiceTest {
                     ));
 
             DimensionBreakdownResponse response = statsService.getBreakdown(
-                    LINK_UUID, LinkDailyDimensionStat.DimensionType.DEVICE, from, to);
+                    TEST_USER_ID, LINK_UUID, LinkDailyDimensionStat.DimensionType.DEVICE, from, to);
 
             log.info("===== 분포 조회 테스트 =====");
             response.breakdown().forEach(item ->
@@ -211,7 +212,7 @@ class StatsServiceTest {
                     .thenReturn(List.of());
 
             DimensionBreakdownResponse response = statsService.getBreakdown(
-                    LINK_UUID, LinkDailyDimensionStat.DimensionType.REGION, from, to);
+                    TEST_USER_ID, LINK_UUID, LinkDailyDimensionStat.DimensionType.REGION, from, to);
 
             log.info("===== 분포 조회 테스트 (데이터 없음) =====");
             log.info("breakdown size={}", response.breakdown().size());
@@ -233,7 +234,7 @@ class StatsServiceTest {
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(valueOperations.get(expectedKey)).thenReturn("42");
 
-            long result = statsService.getRealtimeClickCount(LINK_UUID);
+            long result = statsService.getRealtimeClickCount(TEST_USER_ID, LINK_UUID);
 
             log.info("===== 실시간 접속자 수 테스트 (값 있음) =====");
             log.info("redisKey={}, result={}", expectedKey, result);
@@ -249,7 +250,7 @@ class StatsServiceTest {
             when(redisTemplate.opsForValue()).thenReturn(valueOperations);
             when(valueOperations.get(anyString())).thenReturn(null);
 
-            long result = statsService.getRealtimeClickCount(LINK_UUID);
+            long result = statsService.getRealtimeClickCount(TEST_USER_ID, LINK_UUID);
 
             log.info("===== 실시간 접속자 수 테스트 (값 없음) =====");
             log.info("result={}", result);
@@ -260,12 +261,12 @@ class StatsServiceTest {
         @Test
         @DisplayName("소유하지 않은 링크면 Redis 조회 전에 예외가 발생한다")
         void notOwnedLink_throwsBeforeRedisLookup() {
-            when(linkRepository.findByLinkIdAndUserIdAndIsVisibleTrue(anyString(), eq(TEMP_USER_ID)))
+            when(linkRepository.findByLinkIdAndUserIdAndIsVisibleTrue(anyString(), eq(TEST_USER_ID)))
                     .thenReturn(Optional.empty());
 
             log.info("===== 실시간 접속자 수 - 소유권 검증 실패 테스트 =====");
 
-            assertThatThrownBy(() -> statsService.getRealtimeClickCount("someone-elses-link"))
+            assertThatThrownBy(() -> statsService.getRealtimeClickCount(TEST_USER_ID, "someone-elses-link"))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }

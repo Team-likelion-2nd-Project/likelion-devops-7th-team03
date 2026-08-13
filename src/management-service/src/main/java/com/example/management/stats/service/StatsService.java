@@ -7,8 +7,8 @@ import com.example.management.stats.dto.DimensionBreakdownResponse;
 import com.example.management.stats.dto.StatsResponses.*;
 import com.example.management.stats.repository.LinkDailyDimensionStatRepository;
 import com.example.management.stats.repository.LinkDailyStatRepository;
-import com.example.management.url_link.domain.Link;
-import com.example.management.url_link.domain.LinkRepository;
+import com.example.management.links.domain.Link;
+import com.example.management.links.repository.LinkRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -20,9 +20,6 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 public class StatsService {
-    // TODO: kakao-login merge 후 SecurityContext에서 실제 userId(UUID)를 꺼내
-    // UserRepository로 내부 id 조회하는 방식으로 교체할 것. 지금은 임시 고정값.
-    private static final Long TEMP_USER_ID = 1L;
 
     private final LinkRepository linkRepository;
     private final LinkDailyStatRepository dailyStatRepository;
@@ -30,8 +27,8 @@ public class StatsService {
 
     private final StringRedisTemplate redisTemplate;
 
-    public DailyStatsResponse getDailyStats(String linkUuid, LocalDate from, LocalDate to) {
-        Link link = resolveOwnedLink(linkUuid);
+    public DailyStatsResponse getDailyStats(Long userId, String linkUuid, LocalDate from, LocalDate to) {
+        Link link = resolveOwnedLink(userId, linkUuid);
 
         List<DailyStat> daily = dailyStatRepository.findDailyFilled(link.getId(), from, to).stream()
                 .map(r -> new DailyStat(r.getStatDate(), r.getClickCount(), r.getVisitorCount()))
@@ -46,12 +43,12 @@ public class StatsService {
         return new DailyStatsResponse(daily, summary);
     }
 
-    public List<LinkCompare> compareLinks(List<String> linkUuids, LocalDate from, LocalDate to) {
+    public List<LinkCompare> compareLinks(Long userId, List<String> linkUuids, LocalDate from, LocalDate to) {
         if (linkUuids == null || linkUuids.isEmpty()) {
             throw new IllegalArgumentException("linkIds must not be empty");
         }
 
-        List<Link> links = linkRepository.findByLinkIdInAndUserIdAndIsVisibleTrue(linkUuids, TEMP_USER_ID);
+        List<Link> links = linkRepository.findByLinkIdInAndUserIdAndIsVisibleTrue(linkUuids, userId);
         List<Long> internalIds = links.stream().map(Link::getId).toList();
 
         if (internalIds.isEmpty()) {
@@ -64,8 +61,8 @@ public class StatsService {
                 .toList();
     }
 
-    public List<ReferrerStat> getReferrerStats(String linkUuid, LocalDate from, LocalDate to) {
-        Link link = resolveOwnedLink(linkUuid);
+    public List<ReferrerStat> getReferrerStats(Long userId, String linkUuid, LocalDate from, LocalDate to) {
+        Link link = resolveOwnedLink(userId, linkUuid);
 
         return dimensionStatRepository.findReferrerStats(link.getId(), from, to).stream()
                 .map(r -> new ReferrerStat(r.getReferrerCategory(), r.getClickCount(), r.getPercentage()))
@@ -73,7 +70,7 @@ public class StatsService {
     }
 
     // ===================================================================
-    // 신규 추가 (일별 증감률 / 기타 분포(디바이스·지역) / 실시간 접속자 수)
+    // 일별 증감률 / 기타 분포(디바이스·지역) / 실시간 접속자 수
     // ===================================================================
 
     /**
@@ -81,8 +78,8 @@ public class StatsService {
      * baseDate(기본값: 어제) vs 그 전날을 비교한다.
      * (당일 값은 배치 집계 전이라 이 테이블엔 없음 — 필요하면 realtime API로 별도 조회)
      */
-    public DailyChangeResponse getDailyChange(String linkUuid, LocalDate baseDate) {
-        Link link = resolveOwnedLink(linkUuid);
+    public DailyChangeResponse getDailyChange(Long userId, String linkUuid, LocalDate baseDate) {
+        Link link = resolveOwnedLink(userId, linkUuid);
         LocalDate previousDate = baseDate.minusDays(1);
 
         Optional<LinkDailyStat> base = dailyStatRepository.findByLinkIdAndStatDate(link.getId(), baseDate);
@@ -103,17 +100,17 @@ public class StatsService {
 
     /**
      * 기타 분포 조회 (FR-004-5 디바이스·지역)
-     *이 메서드는 DEVICE/REGION
      * dimensionType은 Controller에서 enum으로 미리 검증한 뒤 넘어온다
      * (잘못된 값이면 valueOf()에서 즉시 IllegalArgumentException 발생 → 조용히 0건 나오는 것 방지).
      */
     public DimensionBreakdownResponse getBreakdown(
+            Long userId,
             String linkUuid,
             LinkDailyDimensionStat.DimensionType dimensionType,
             LocalDate from,
             LocalDate to
     ) {
-        Link link = resolveOwnedLink(linkUuid);
+        Link link = resolveOwnedLink(userId, linkUuid);
 
         var rows = dimensionStatRepository.findBreakdown(link.getId(), dimensionType.name(), from, to);
         long total = rows.stream().mapToLong(r -> r.getClickCount()).sum();
@@ -136,15 +133,15 @@ public class StatsService {
      * 소유권 검증은 여기서도 동일하게 resolveOwnedLink()로 처리한다
      * (링크 id만 알면 남의 링크 실시간 클릭수를 볼 수 있는 문제를 막기 위함).
      */
-    public long getRealtimeClickCount(String linkUuid) {
-        Link link = resolveOwnedLink(linkUuid);
+    public long getRealtimeClickCount(Long userId, String linkUuid) {
+        Link link = resolveOwnedLink(userId, linkUuid);
         String key = "click_count:" + link.getId() + ":" + LocalDate.now();
         String value = redisTemplate.opsForValue().get(key);
         return value == null ? 0L : Long.parseLong(value);
     }
 
-    private Link resolveOwnedLink(String linkUuid) {
-        return linkRepository.findByLinkIdAndUserIdAndIsVisibleTrue(linkUuid, TEMP_USER_ID)
+    private Link resolveOwnedLink(Long userId, String linkUuid) {
+        return linkRepository.findByLinkIdAndUserIdAndIsVisibleTrue(linkUuid, userId)
                 .orElseThrow(() -> new IllegalArgumentException("link not found or not owned: " + linkUuid));
     }
 }

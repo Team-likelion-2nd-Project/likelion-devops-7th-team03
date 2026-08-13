@@ -104,6 +104,24 @@ class RedisRedirectCacheTest {
     }
 
     @Test
+    @DisplayName("비활성 링크도 일반 링크와 동일한 TTL로 저장한다")
+    void storesInactiveEntryWithDefaultTtl() {
+        RedirectCacheEntry entry = new RedirectCacheEntry(1L, "https://example.com", false, null);
+
+        redirectCache.put("demo", entry);
+
+        verify(stringRedisTemplate).execute(
+                any(RedisScript.class),
+                eq(java.util.List.of(KEY)),
+                eq("1"),
+                eq("https://example.com"),
+                eq("false"),
+                eq(""),
+                eq("600")
+        );
+    }
+
+    @Test
     @DisplayName("Redis 조회 오류는 캐시 미스로 처리한다")
     void returnsEmptyWhenRedisLookupFails() {
         when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);

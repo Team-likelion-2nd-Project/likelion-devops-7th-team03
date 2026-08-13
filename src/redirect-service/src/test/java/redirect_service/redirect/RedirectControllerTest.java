@@ -3,7 +3,7 @@ package redirect_service.redirect;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
-import redirect_service.config.ClickLogProperties;
+import redirect_service.config.RedirectProperties;
 
 import java.net.URI;
 
@@ -18,7 +18,7 @@ class RedirectControllerTest {
     @DisplayName("서비스가 반환한 URL을 Location 헤더에 담아 302를 반환한다")
     void redirectsToUrlReturnedByService() {
         RedirectService redirectService = mock(RedirectService.class);
-        ClickLogProperties properties = new ClickLogProperties();
+        RedirectProperties properties = new RedirectProperties();
         VisitorIdResolver visitorIdResolver = mock(VisitorIdResolver.class);
         RedirectController controller = new RedirectController(redirectService, properties, visitorIdResolver);
         MockHttpServletRequest request = new MockHttpServletRequest();

@@ -3,7 +3,7 @@ package redirect_service.redirect;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
-import redirect_service.config.ClickLogProperties;
+import redirect_service.config.RedirectProperties;
 
 import java.util.UUID;
 
@@ -11,7 +11,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class VisitorIdResolver {
 
-    private final ClickLogProperties properties;
+    private final RedirectProperties properties;
 
     public String resolve(String existingVisitorId) {
         if (isUuid(existingVisitorId)) {
@@ -29,7 +29,7 @@ public class VisitorIdResolver {
                 .path("/")
                 .maxAge(properties.getVisitorCookieMaxAge())
                 .httpOnly(true)
-                .secure(properties.isSecureCookie())
+                .secure(properties.isVisitorCookieSecure())
                 .sameSite("Lax")
                 .build()
                 .toString();

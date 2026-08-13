@@ -3,7 +3,7 @@ package redirect_service.redirect;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import redirect_service.config.ClickLogProperties;
+import redirect_service.config.RedirectProperties;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,12 +19,12 @@ import java.time.ZoneOffset;
 public class RedirectController {
 
     private final RedirectService redirectService;
-    private final ClickLogProperties clickLogProperties;
+    private final RedirectProperties redirectProperties;
     private final VisitorIdResolver visitorIdResolver;
 
     @GetMapping("/{slug}")
     public ResponseEntity<Void> redirect(@PathVariable String slug, HttpServletRequest request) {
-        String existingVisitorId = findCookieValue(request.getCookies(), clickLogProperties.getVisitorCookieName());
+        String existingVisitorId = findCookieValue(request.getCookies(), redirectProperties.getVisitorCookieName());
         String visitorId = visitorIdResolver.resolve(existingVisitorId);
         RedirectRequest redirectRequest = new RedirectRequest(
                 slug,

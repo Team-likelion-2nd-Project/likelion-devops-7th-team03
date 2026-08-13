@@ -1,6 +1,6 @@
 package redirect_service.redirect;
 
-import redirect_service.common.exception.RedirectNotFoundException;
+import redirect_service.exception.RedirectNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -8,8 +8,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
-import redirect_service.redirect.RedirectCacheEntry;
-import redirect_service.redirect.RedisRedirectCache;
 import org.springframework.test.util.ReflectionTestUtils;
 import redirect_service.clicklog.event.RedirectSucceededEvent;
 

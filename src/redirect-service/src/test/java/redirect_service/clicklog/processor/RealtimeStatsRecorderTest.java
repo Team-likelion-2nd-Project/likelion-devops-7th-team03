@@ -3,7 +3,7 @@ package redirect_service.clicklog.processor;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import redirect_service.clicklog.event.ClickEvent;
-import redirect_service.config.RealtimeStatsProperties;
+import redirect_service.config.RealtimeStatsRecorderProperties;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -15,7 +15,7 @@ class RealtimeStatsRecorderTest {
 
     @Test
     void dropsEventsWhenBoundedBufferIsFull() {
-        RealtimeStatsProperties properties = new RealtimeStatsProperties();
+        RealtimeStatsRecorderProperties properties = new RealtimeStatsRecorderProperties();
         properties.setBufferCapacity(1);
         RealtimeStatsRecorder handler =
                 new RealtimeStatsRecorder(mock(StringRedisTemplate.class), properties);

@@ -1,4 +1,4 @@
-package redirect_service.common.exception;
+package redirect_service.exception;
 
 public class RedirectNotFoundException extends RuntimeException {
 

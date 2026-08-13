@@ -1,4 +1,4 @@
-package redirect_service.common.exception;
+package redirect_service.exception;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;

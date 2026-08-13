@@ -6,13 +6,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
 
+/** Redis 잠정 통계 recorder의 보관·배치·버퍼 정책이다. */
 @Getter
 @Setter
 @ConfigurationProperties(prefix = "app.realtime-stats")
-public class RealtimeStatsProperties {
+public class RealtimeStatsRecorderProperties {
 
-    /** Redis 키를 기준일 자정(KST)부터 이 기간만큼 보관한다. */
-    private Duration retention = Duration.ofDays(3);
-    /** 5초 배치로 보낼 이벤트를 저장하는 bounded 버퍼의 최대 크기다. */
+    private Duration ttl = Duration.ofDays(3); // retention
+    private Duration flushInterval = Duration.ofSeconds(5);
     private int bufferCapacity = 100_000;
 }

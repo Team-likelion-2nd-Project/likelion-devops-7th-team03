@@ -1,7 +1,7 @@
 package redirect_service.redirect;
 
 import lombok.extern.slf4j.Slf4j;
-import redirect_service.common.exception.RedirectNotFoundException;
+import redirect_service.exception.RedirectNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;

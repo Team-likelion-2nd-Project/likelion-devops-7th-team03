@@ -12,7 +12,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import redirect_service.clicklog.event.ClickEvent;
-import redirect_service.config.RealtimeStatsProperties;
+import redirect_service.config.RealtimeStatsRecorderProperties;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -33,6 +33,9 @@ import java.util.concurrent.atomic.AtomicLong;
 public class RealtimeStatsRecorder {
 
     static final ZoneId KST = ZoneId.of("Asia/Seoul");
+    // Redis key contract: stats:{KST date}:link:{internal linkId}:{clicks|uv}
+    private static final String CLICKS_KEY_PATTERN = "stats:%s:link:%d:clicks";
+    private static final String UNIQUE_VISITORS_KEY_PATTERN = "stats:%s:link:%d:uv";
 
     private static final RedisScript<Long> UPDATE_STATS_SCRIPT = RedisScript.of("""
             redis.call('INCR', KEYS[1])
@@ -44,11 +47,11 @@ public class RealtimeStatsRecorder {
             """, Long.class);
 
     private final StringRedisTemplate redisTemplate;
-    private final RealtimeStatsProperties properties;
+    private final RealtimeStatsRecorderProperties properties;
     private final BlockingQueue<ClickEvent> pendingEvents;
     private final AtomicLong droppedEventCount = new AtomicLong();
 
-    public RealtimeStatsRecorder(StringRedisTemplate redisTemplate, RealtimeStatsProperties properties) {
+    public RealtimeStatsRecorder(StringRedisTemplate redisTemplate, RealtimeStatsRecorderProperties properties) {
         this.redisTemplate = redisTemplate;
         this.properties = properties;
         this.pendingEvents = new ArrayBlockingQueue<>(properties.getBufferCapacity());
@@ -65,7 +68,7 @@ public class RealtimeStatsRecorder {
         }
     }
 
-    @Scheduled(fixedRateString = "${app.realtime-stats.flush-interval:5s}")
+    @Scheduled(fixedRateString = "${app.realtime-stats.flush-interval}")
     public void flush() {
         List<ClickEvent> batch = drain();
         if (batch.isEmpty()) {
@@ -104,11 +107,11 @@ public class RealtimeStatsRecorder {
     }
 
     static String clicksKey(LocalDate date, long linkId) {
-        return "stats:daily:%s:link:%d:clicks".formatted(date, linkId);
+        return CLICKS_KEY_PATTERN.formatted(date, linkId);
     }
 
     static String uniqueVisitorsKey(LocalDate date, long linkId) {
-        return "stats:daily:uv:%s:link:%d".formatted(date, linkId);
+        return UNIQUE_VISITORS_KEY_PATTERN.formatted(date, linkId);
     }
 
     long droppedEventCount() {
@@ -116,7 +119,7 @@ public class RealtimeStatsRecorder {
     }
 
     private long expireAt(LocalDate date) {
-        return date.atStartOfDay(KST).toInstant().plus(properties.getRetention()).getEpochSecond();
+        return date.atStartOfDay(KST).toInstant().plus(properties.getTtl()).getEpochSecond();
     }
 
     private List<ClickEvent> drain() {

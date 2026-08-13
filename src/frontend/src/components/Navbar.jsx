@@ -16,7 +16,6 @@ export function Navbar() {
             단축하기
           </NavLink>
           {user && <NavLink to="/dashboard">내 링크</NavLink>}
-          {user && <NavLink to="/collections">컬렉션</NavLink>}
           {user && <NavLink to="/stats">통계 대시보드</NavLink>}
           <NavLink to="/architecture">아키텍처</NavLink>
         </nav>

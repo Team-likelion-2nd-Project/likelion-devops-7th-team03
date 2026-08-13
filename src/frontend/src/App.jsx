@@ -10,8 +10,6 @@ import { KakaoCallback } from './pages/KakaoCallback'
 import { Dashboard } from './pages/Dashboard'
 import { LinkStats } from './pages/LinkStats'
 import { StatsDashboard } from './pages/StatsDashboard'
-import { Collections } from './pages/Collections'
-import { CollectionDetail } from './pages/CollectionDetail'
 import { Architecture } from './pages/Architecture'
 import { RedirectHandler } from './pages/Redirect'
 
@@ -46,22 +44,6 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <StatsDashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/collections"
-              element={
-                <ProtectedRoute>
-                  <Collections />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/collections/:id"
-              element={
-                <ProtectedRoute>
-                  <CollectionDetail />
                 </ProtectedRoute>
               }
             />

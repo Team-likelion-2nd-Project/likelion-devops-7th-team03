@@ -11,10 +11,6 @@ const EMPTY_DB = () => ({
   links: [],
   click_events: [],
   link_daily_stats: [],
-  collections: [],
-  bookmarks: [],
-  tags: [],
-  bookmark_tags: [],
 })
 
 function load() {

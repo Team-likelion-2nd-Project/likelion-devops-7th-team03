@@ -230,7 +230,7 @@ resource "aws_cloudfront_distribution" "main" {
 
     forwarded_values {
       query_string = true
-      headers      = ["Authorization", "Origin", "Referer"]
+      headers      = ["Authorization", "Origin", "Referer", "Host"]
       cookies {
         forward = "all"
       }
@@ -311,5 +311,48 @@ resource "aws_security_group" "alb" {
 
   tags = {
     Name = "${var.cluster_name}-alb-sg"
+  }
+}
+
+resource "aws_security_group_rule" "alb_to_nodes" {
+  type                     = "ingress"
+  from_port                = 8080
+  to_port                  = 8080
+  protocol                  = "tcp"
+  security_group_id        = module.eks.node_security_group_id
+  source_security_group_id = aws_security_group.alb.id
+  description               = "ALB to pods (target-type ip) on container port 8080"
+}
+
+# 이름 대신 태그로 조회 — AWS Load Balancer Controller가 붙이는 태그는
+# Ingress 이름/네임스페이스가 안 바뀌는 한 안정적이라, ALB 이름 해싱 규칙이
+# 바뀌어도(컨트롤러 버전 업 등) 깨지지 않는다.
+data "aws_resourcegroupstaggingapi_resources" "ingress_alb" {
+  resource_type_filters = ["elasticloadbalancing:loadbalancer"]
+
+  tag_filter {
+    key    = "elbv2.k8s.aws/cluster"
+    values = [var.cluster_name]
+  }
+
+  tag_filter {
+    key    = "ingress.k8s.aws/stack"
+    values = ["default/snipy-ingress"]
+  }
+}
+
+data "aws_lb" "ingress" {
+  arn = data.aws_resourcegroupstaggingapi_resources.ingress_alb.resource_tag_mapping_list[0].resource_arn
+}
+
+resource "aws_route53_record" "alb_origin" {
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = "alb.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = data.aws_lb.ingress.dns_name
+    zone_id                = data.aws_lb.ingress.zone_id
+    evaluate_target_health = false
   }
 }

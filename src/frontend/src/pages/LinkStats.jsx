@@ -39,6 +39,7 @@ export function LinkStats() {
   const [deviceBreakdown, setDeviceBreakdown] = useState(null)
   const [regionBreakdown, setRegionBreakdown] = useState(null)
   const [realtime, setRealtime] = useState(null)
+  const [realtimeVisitors, setRealtimeVisitors] = useState(null)
 
   // ponytail: 링크 단건 조회 API가 없어 목록에서 찾는다. 사용자당 링크가 100개를 넘으면 못 찾을 수 있음 — 그때 GET /api/links/{id} 추가.
   useEffect(() => {
@@ -79,7 +80,10 @@ export function LinkStats() {
     let cancelled = false
     function poll() {
       getRealtimeCount(linkId).then((res) => {
-        if (!cancelled) setRealtime(res.realtimeClickCount)
+        if (!cancelled) {
+          setRealtime(res.realtimeClickCount)
+          setRealtimeVisitors(res.realtimeUniqueVisitorCount)
+        }
       })
     }
     poll()
@@ -116,7 +120,8 @@ export function LinkStats() {
       </div>
 
       <div className="stat-tiles">
-        <StatTile label="실시간 접속자 (최근 5분)" value={realtime ?? '-'} />
+        <StatTile label="오늘 클릭 수" value={realtime ?? '-'} />
+        <StatTile label="오늘 방문자 수 (UV)" value={realtimeVisitors ?? '-'} />
         {change && (
           <>
             <StatTile
@@ -129,7 +134,8 @@ export function LinkStats() {
             />
           </>
         )}
-        <StatTile label="총 클릭" value={daily.summary.totalClicks.toLocaleString()} />
+        {/* link_daily_stats는 배치가 어제까지만 채워서 오늘 클릭이 빠져있다. realtime(오늘, Redis)을 더해 보정한다. */}
+        <StatTile label="총 클릭" value={(daily.summary.totalClicks + (realtime ?? 0)).toLocaleString()} />
       </div>
 
       <div className="card chart-card">

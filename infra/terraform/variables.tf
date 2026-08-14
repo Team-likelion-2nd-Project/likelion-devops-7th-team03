@@ -82,7 +82,7 @@ variable "elasticache_node_type" {
 variable "domain_name" {
   description = "서비스 도메인 (Route53에 등록된 도메인)"
   type        = string
-  # 예: default = "snipy.example.com" — 실제 도메인으로 채워주세요
+  default = "snipy.life"
 }
 
 variable "waf_geo_match_enabled" {

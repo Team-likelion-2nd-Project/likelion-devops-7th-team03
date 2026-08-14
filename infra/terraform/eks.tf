@@ -8,7 +8,7 @@ module "eks" {
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets # 노드는 프라이빗 서브넷에 배치
 
-  cluster_endpoint_public_access = true # kubectl 접근용 (팀원 IAM 접근 제어는 access_entries로 별도 관리)
+  cluster_endpoint_public_access           = true # kubectl 접근용 (팀원 IAM 접근 제어는 access_entries로 별도 관리)
   enable_cluster_creator_admin_permissions = true
 
   # ── 필수 애드온 ─────────────────────────────
@@ -63,6 +63,25 @@ resource "helm_release" "metrics_server" {
   depends_on = [module.eks]
 }
 
+# ── Cluster Autoscaler용 IRSA ──────────────────
+# Helm 배포만으로는 노드가 스케일되지 않음 — ASG 조작 권한(IAM)이 파드에 IRSA로 연결돼야 함
+module "irsa_cluster_autoscaler" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "~> 5.39"
+
+  role_name = "${var.cluster_name}-cluster-autoscaler"
+
+  attach_cluster_autoscaler_policy = true
+  cluster_autoscaler_cluster_names = [var.cluster_name]
+
+  oidc_providers = {
+    main = {
+      provider_arn               = module.eks.oidc_provider_arn
+      namespace_service_accounts = ["kube-system:cluster-autoscaler"]
+    }
+  }
+}
+
 # ── Cluster Autoscaler (Helm) ─────────────────
 resource "helm_release" "cluster_autoscaler" {
   name       = "cluster-autoscaler"
@@ -80,5 +99,15 @@ resource "helm_release" "cluster_autoscaler" {
     value = var.aws_region
   }
 
-  depends_on = [module.eks]
+  set {
+    name  = "rbac.serviceAccount.name"
+    value = "cluster-autoscaler"
+  }
+
+  set {
+    name  = "rbac.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+    value = module.irsa_cluster_autoscaler.iam_role_arn
+  }
+
+  depends_on = [module.eks, module.irsa_cluster_autoscaler]
 }

@@ -3,6 +3,7 @@ package redirect_service.clicklog.referrer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import redirect_service.clicklog.resolver.ReferrerCategoryResolver;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

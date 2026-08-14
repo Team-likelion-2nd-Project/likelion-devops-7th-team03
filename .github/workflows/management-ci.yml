@@ -40,7 +40,7 @@ jobs:
       DB_APP_PASSWORD: ci-app-password
       DB_MIGRATOR_PASSWORD: ci-migrator-password
       DB_READONLY_PASSWORD: ci-readonly-password
-      JWT_SECRET: 01234567890123456789012345678901
+      JWT_SECRET: "test-jwt-secret-test-jwt-secret-test-jwt-secret-test-jwt-secret"
       KAKAO_CLIENT_ID: ci-kakao-client-id
       KAKAO_CLIENT_SECRET: ""
       KAKAO_REDIRECT_URI: https://example.com/auth/kakao/callback

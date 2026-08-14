@@ -1,17 +1,18 @@
 package redirect_service.redirect;
 
-import redirect_service.common.exception.RedirectNotFoundException;
+import redirect_service.exception.RedirectNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import redirect_service.redirect.RedirectCacheEntry;
-import redirect_service.redirect.RedisRedirectCache;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
+import redirect_service.clicklog.event.RedirectSucceededEvent;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,11 +30,14 @@ class RedirectServiceTest {
     @Mock
     private RedisRedirectCache redirectCache;
 
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
     private RedirectService redirectService;
 
     @BeforeEach
     void setUp() {
-        redirectService = new RedirectService(linkRepository, redirectCache);
+        redirectService = new RedirectService(linkRepository, redirectCache, eventPublisher);
     }
 
     @Test
@@ -49,6 +53,28 @@ class RedirectServiceTest {
         assertThat(redirectTarget.originalUrl()).isEqualTo("https://example.com");
         verify(linkRepository).findBySlug("valid");
         verify(redirectCache).put("valid", new RedirectCacheEntry(1L, "https://example.com", true, null));
+    }
+
+    @Test
+    @DisplayName("성공한 리다이렉트의 visitorId와 요청 정보를 불변 이벤트로 발행한다")
+    void publishesSnapshotAfterSuccessfulRedirect() {
+        RedirectRequest request = new RedirectRequest(
+                "valid", "visitor-id", LocalDateTime.parse("2026-08-12T15:00:00"), "203.0.113.10", null,
+                "Mozilla/5.0", "https://google.com/search", null);
+        when(redirectCache.get("valid")).thenReturn(Optional.of(
+                new RedirectCacheEntry(1L, "https://example.com", true, null)));
+        RedirectTarget result = redirectService.redirect(request);
+
+        org.mockito.ArgumentCaptor<RedirectSucceededEvent> captor =
+                org.mockito.ArgumentCaptor.forClass(RedirectSucceededEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertThat(result.linkId()).isEqualTo(1L);
+        assertThat(captor.getValue().linkId()).isEqualTo(1L);
+        assertThat(captor.getValue().request())
+                .extracting(event -> event.visitorId(), event -> event.remoteAddress(), event -> event.userAgent(),
+                        event -> event.referrer())
+                .containsExactly("visitor-id", "203.0.113.10", "Mozilla/5.0", "https://google.com/search");
+        assertThat(captor.getValue().request().occurredAt()).isEqualTo(request.occurredAt());
     }
 
     @Test
@@ -103,7 +129,8 @@ class RedirectServiceTest {
     void throwsNotFoundForExpiredLink() {
         when(redirectCache.get("expired")).thenReturn(Optional.empty());
         when(linkRepository.findBySlug("expired"))
-                .thenReturn(Optional.of(link("expired", "https://example.com", true, LocalDateTime.now().minusSeconds(1))));
+                .thenReturn(Optional.of(link("expired", "https://example.com", true,
+                        LocalDateTime.now(ZoneOffset.UTC).minusSeconds(1))));
 
         assertThatThrownBy(() -> redirectService.findRedirectTarget("expired"))
                 .isInstanceOf(RedirectNotFoundException.class);
@@ -113,7 +140,8 @@ class RedirectServiceTest {
     @DisplayName("만료된 캐시는 DB를 조회하지 않고 404를 반환한다")
     void throwsNotFoundForExpiredCachedLink() {
         when(redirectCache.get("expired-cache"))
-                .thenReturn(Optional.of(new RedirectCacheEntry(1L, "https://example.com", true, LocalDateTime.now().minusSeconds(1))));
+                .thenReturn(Optional.of(new RedirectCacheEntry(1L, "https://example.com", true,
+                        LocalDateTime.now(ZoneOffset.UTC).minusSeconds(1))));
 
         assertThatThrownBy(() -> redirectService.findRedirectTarget("expired-cache"))
                 .isInstanceOf(RedirectNotFoundException.class);

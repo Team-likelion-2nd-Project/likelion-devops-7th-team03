@@ -5,7 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
-import redirect_service.config.RedirectCacheProperties;
+import redirect_service.config.RedirectProperties;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -41,7 +41,7 @@ public class RedisRedirectCache {
     );
 
     private final StringRedisTemplate stringRedisTemplate;
-    private final RedirectCacheProperties properties;
+    private final RedirectProperties properties;
 
     public Optional<RedirectCacheEntry> get(String slug) {
         try {
@@ -68,7 +68,7 @@ public class RedisRedirectCache {
                     entry.originalUrl(),                                            // ARGV[2]
                     Boolean.toString(entry.isEnabled()),                            // ARGV[3]
                     entry.expiresAt() == null ? "" : entry.expiresAt().toString(),  // ARGV[4]
-                    String.valueOf(properties.getTtl().getSeconds())               // ARGV[5]
+                    String.valueOf(properties.getCacheTtl().getSeconds())          // ARGV[5]
             );
         } catch (Exception exception) {
             log.warn("캐시 저장(put) 중 예외가 발생했으나 캐시 없이 처리를 진행합니다. slug={}", slug, exception);

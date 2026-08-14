@@ -12,10 +12,8 @@
 #
 # 전제 조건:
 #   - infra/terraform/ecr.tf 로 ECR 저장소(management-service)가 미리 생성돼 있어야 함
-#   - GitHub Secrets에 아래 값들이 등록돼 있어야 함:
-#       DB_APP_PASSWORD, DB_MIGRATOR_PASSWORD, DB_READONLY_PASSWORD
-#       JWT_SECRET, KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET, KAKAO_REDIRECT_URI
-#       AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
+#   - GitHub Secrets에 AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION이 등록돼 있어야 함
+#     (DB/JWT/Kakao 값은 임시 CI DB와 mock 테스트만 위한 고정값을 사용한다.)
 # =====================================================================
 
 name: Management Service CI
@@ -36,6 +34,16 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    # 이 Job은 매 실행마다 새 MySQL 컨테이너를 만들고 외부 Kakao API를 호출하지 않는다.
+    # 운영 비밀값과 분리하기 위해 테스트 전용의 공개된 고정값을 사용한다.
+    env:
+      DB_APP_PASSWORD: ci-app-password
+      DB_MIGRATOR_PASSWORD: ci-migrator-password
+      DB_READONLY_PASSWORD: ci-readonly-password
+      JWT_SECRET: "test-jwt-secret-test-jwt-secret-test-jwt-secret-test-jwt-secret"
+      KAKAO_CLIENT_ID: ci-kakao-client-id
+      KAKAO_CLIENT_SECRET: ""
+      KAKAO_REDIRECT_URI: https://example.com/auth/kakao/callback
 
     # 테스트 실행 전, 임시로 MySQL/Redis 컨테이너를 띄워준다.
     # 로컬에서 docker compose up -d mysql redis 하던 것과 동일한 역할.
@@ -94,9 +102,9 @@ jobs:
           # APP_PASSWORD는 run-migration.sh가 shortlink_app 계정을 생성할 때 쓰는 값.
           # 아래 "Gradle 빌드 및 테스트" 스텝의 DB_APP_PASSWORD와 반드시 같은 값이어야
           # 앱이 그 계정으로 정상 로그인할 수 있다.
-          APP_PASSWORD: ${{ secrets.DB_APP_PASSWORD }}
-          MIGRATOR_PASSWORD: ${{ secrets.DB_MIGRATOR_PASSWORD }}
-          READONLY_PASSWORD: ${{ secrets.DB_READONLY_PASSWORD }}
+          APP_PASSWORD: ${{ env.DB_APP_PASSWORD }}
+          MIGRATOR_PASSWORD: ${{ env.DB_MIGRATOR_PASSWORD }}
+          READONLY_PASSWORD: ${{ env.DB_READONLY_PASSWORD }}
         run: |
           chmod +x run-migration.sh
           ./run-migration.sh --allow-non-utc
@@ -110,13 +118,8 @@ jobs:
           DB_PORT: 3306
           DB_NAME: shortlink
           DB_APP_USER: shortlink_app
-          DB_APP_PASSWORD: ${{ secrets.DB_APP_PASSWORD }}
           REDIS_HOST: 127.0.0.1
           REDIS_PORT: 6379
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          KAKAO_CLIENT_ID: ${{ secrets.KAKAO_CLIENT_ID }}
-          KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
-          KAKAO_REDIRECT_URI: ${{ secrets.KAKAO_REDIRECT_URI }}
         run: |
           chmod +x ./gradlew
           ./gradlew test

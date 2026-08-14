@@ -21,11 +21,13 @@ terraform {
   }
 
   # 팀 공용 상태 관리가 필요하면 S3 backend 추가 권장
-  # backend "s3" {
-  #   bucket = "snipy-terraform-state"
-  #   key    = "eks/terraform.tfstate"
-  #   region = "ap-southeast-1"
-  # }
+  backend "s3" {
+    bucket = "snipy-cluster-terraform-state-834922934330"
+    key    = "eks/terraform.tfstate"
+    region = "ap-southeast-1"
+    encrypt      = true
+    use_lockfile = true   # Terraform 1.10+ 네이티브 S3 잠금, DynamoDB 안 써도 됨
+   }
 }
 
 provider "aws" {

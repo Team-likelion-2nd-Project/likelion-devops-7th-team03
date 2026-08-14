@@ -19,6 +19,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import redirect_service.redirect.RedisRedirectCache;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
@@ -93,7 +94,8 @@ class MySqlRedirectControllerIntegrationTest {
     @DisplayName("migration으로 생성된 MySQL 스키마에서 비활성 또는 만료 링크는 404를 반환한다")
     void returnsNotFoundForInvisibleOrExpiredLinkInMigratedMySqlSchema() throws Exception {
         insertLink("mysql-hidden", "https://example.com/hidden", false, null);
-        insertLink("mysql-expired", "https://example.com/expired", true, LocalDateTime.now().minusSeconds(1));
+        insertLink("mysql-expired", "https://example.com/expired", true,
+                LocalDateTime.now(ZoneOffset.UTC).minusSeconds(1));
 
         mockMvc.perform(get("/mysql-hidden"))
                 .andExpect(status().isNotFound());

@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 @Configuration(proxyBeanMethods = false)
 @Profile("local")
@@ -30,7 +31,7 @@ public class LocalSampleDataConfig {
                     "expired",
                     "https://example.com/expired",
                     true,
-                    LocalDateTime.now().minusDays(1)
+                    LocalDateTime.now(ZoneOffset.UTC).minusDays(1)
             );
         };
     }

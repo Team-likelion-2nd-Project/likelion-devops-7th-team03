@@ -15,11 +15,13 @@ metadata:
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-redirect: '443'
     # ap-southeast-1 리전의 ALB용 ACM 인증서 (CloudFront용과는 별도 — providers.tf의 기본 리전)
-    alb.ingress.kubernetes.io/certificate-arn: "arn으로 채우기"
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:ap-southeast-1:834922934330:certificate/ef026f40-15ef-4b64-8c32-fd75eec6ced5"
     # CloudFront 프리픽스 리스트만 인바운드 허용 (직접 인터넷 접근 차단)
     # terraform output alb_security_group_id 값으로 교체 — 이 SG를 지정하면
     # 컨트롤러가 별도 프론트엔드 SG를 자동 생성하지 않고 이 SG만 사용함
-    alb.ingress.kubernetes.io/security-groups: "1차 apply 후 해당 그룹 채우기"
+    alb.ingress.kubernetes.io/security-groups: "1차 apply 후 채우기"
+    # 헬스체크 경로 설정
+    alb.ingress.kubernetes.io/healthcheck-path: /actuator/health/liveness
 spec:
   rules:
     - host: "snipy.life" # var.domain_name과 동일한 값으로 교체
@@ -43,12 +45,3 @@ spec:
                 name: redirect-service
                 port:
                   number: 8080
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: frontend
-                port:
-                  number: 80
-
-

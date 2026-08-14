@@ -10,7 +10,7 @@ import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import redirect_service.config.RedirectCacheProperties;
+import redirect_service.config.RedirectProperties;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -37,8 +37,8 @@ class RedisRedirectCacheTest {
 
     @BeforeEach
     void setUp() {
-        RedirectCacheProperties properties = new RedirectCacheProperties();
-        properties.setTtl(Duration.ofMinutes(10));
+        RedirectProperties properties = new RedirectProperties();
+        properties.setCacheTtl(Duration.ofMinutes(10));
         redirectCache = new RedisRedirectCache(stringRedisTemplate, properties);
     }
 

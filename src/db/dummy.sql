@@ -42,5 +42,6 @@ INSERT INTO link_daily_dimension_stats (link_id, stat_date, dimension_type, dime
 -- =====================================================================
 -- 실시간 접속자 수는 DB가 아니라 Redis에 넣는다 (별도로 redis-cli 실행)
 -- =====================================================================
--- redis-cli SET click_count:1:2026-08-07 42
--- (키 형식: click_count:{link_id}:{date})
+-- redis-cli SET stats:2026-08-07:link:1:clicks 42
+-- redis-cli PFADD stats:2026-08-07:link:1:uv visitor-1
+-- (키 형식: stats:{KST date}:link:{link_id}:{clicks|uv})

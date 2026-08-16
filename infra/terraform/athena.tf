@@ -33,11 +33,18 @@ resource "aws_glue_catalog_table" "click_events" {
       serialization_library = "org.openx.data.jsonserde.JsonSerDe"
     }
 
-    # 클릭 이벤트 실제 필드에 맞춰 조정 필요 — redirect-service가 Kinesis로 보내는
-    # 이벤트 스키마와 일치해야 함 (linkId, clickedAt, visitorId, referer, userAgent, isBot 등)
+    # redirect-service ClickEvent의 JSON(snake_case) 계약과 일치시킨다.
+    columns {
+      name = "event_id"
+      type = "string"
+    }
+    columns {
+      name = "schema_version"
+      type = "int"
+    }
     columns {
       name = "link_id"
-      type = "string"
+      type = "bigint"
     }
     columns {
       name = "clicked_at"
@@ -48,11 +55,31 @@ resource "aws_glue_catalog_table" "click_events" {
       type = "string"
     }
     columns {
-      name = "referer"
+      name = "language"
       type = "string"
     }
     columns {
       name = "user_agent"
+      type = "string"
+    }
+    columns {
+      name = "device_type"
+      type = "string"
+    }
+    columns {
+      name = "operating_system"
+      type = "string"
+    }
+    columns {
+      name = "browser"
+      type = "string"
+    }
+    columns {
+      name = "referrer"
+      type = "string"
+    }
+    columns {
+      name = "referrer_category"
       type = "string"
     }
     columns {

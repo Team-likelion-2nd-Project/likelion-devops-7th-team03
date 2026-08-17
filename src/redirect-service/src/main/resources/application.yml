@@ -43,6 +43,8 @@ app:
 
   click-event:
     trust-forwarded-for: ${TRUST_FORWARDED_FOR:true}
+    # infra/terraform/streaming.tf의 aws_kinesis_firehose_delivery_stream.click_events.name
+    firehose-stream-name: ${FIREHOSE_STREAM_NAME}
 
   realtime-stats:
     # Redis는 당일 잠정 통계만 보관한다. 원본 클릭 이벤트가 최종 집계의 기준이다.

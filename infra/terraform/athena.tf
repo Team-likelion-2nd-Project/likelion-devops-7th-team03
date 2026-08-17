@@ -201,7 +201,7 @@ resource "aws_iam_role_policy" "athena_cronjob" {
 }
 
 # ══════════════════════════════════════════════════
-# redirect-service(IRSA)가 Kinesis에 클릭 이벤트를 넣을 IAM Role
+# redirect-service(IRSA)가 Firehose에 클릭 이벤트를 넣을 IAM Role
 # ══════════════════════════════════════════════════
 resource "aws_iam_role" "redirect_service" {
   name = "${var.cluster_name}-redirect-service-role"
@@ -233,10 +233,10 @@ resource "aws_iam_role_policy" "redirect_service" {
     Statement = [{
       Effect = "Allow"
       Action = [
-        "kinesis:PutRecord",
-        "kinesis:PutRecords"
+        "firehose:PutRecord",
+        "firehose:PutRecordBatch"
       ]
-      Resource = aws_kinesis_stream.click_events.arn
+      Resource = aws_kinesis_firehose_delivery_stream.click_events.arn
     }]
   })
 }

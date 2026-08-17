@@ -63,25 +63,11 @@ resource "aws_s3_bucket_lifecycle_configuration" "athena_results" {
 data "aws_caller_identity" "current" {}
 
 # ══════════════════════════════════════════════════
-# Kinesis Data Stream
+# Firehose — Direct PUT → S3, 날짜별 파티셔닝
 # ══════════════════════════════════════════════════
-# On-Demand 모드: 평소 트래픽 거의 없다가 부하테스트 때만 스파이크 나는
-# 이번 프로젝트 특성상, 용량을 미리 프로비저닝(Provisioned)하는 것보다
-# 사용한 만큼만 과금되는 On-Demand가 비용 효율적
-resource "aws_kinesis_stream" "click_events" {
-  name = "${var.cluster_name}-click-events"
-  stream_mode_details {
-    stream_mode = "ON_DEMAND"
-  }
-
-  tags = {
-    Name = "${var.cluster_name}-click-events"
-  }
-}
-
-# ══════════════════════════════════════════════════
-# Firehose — Kinesis → S3, 날짜별 파티셔닝
-# ══════════════════════════════════════════════════
+# Redis 실시간 통계(#72)가 이미 별도 직행 경로로 처리되고 있어,
+# 클릭 이벤트를 S3에 적재하는 유일한 목적을 위해 Kinesis Data Stream을
+# 중간에 둘 이유가 없다. redirect-service가 Firehose에 직접 PutRecord한다.
 resource "aws_iam_role" "firehose" {
   name = "${var.cluster_name}-firehose-role"
 
@@ -117,16 +103,6 @@ resource "aws_iam_role_policy" "firehose" {
           "${aws_s3_bucket.click_logs.arn}/*"
         ]
       },
-      {
-        Effect = "Allow"
-        Action = [
-          "kinesis:DescribeStream",
-          "kinesis:GetShardIterator",
-          "kinesis:GetRecords",
-          "kinesis:ListShards"
-        ]
-        Resource = aws_kinesis_stream.click_events.arn
-      }
     ]
   })
 }
@@ -135,10 +111,8 @@ resource "aws_kinesis_firehose_delivery_stream" "click_events" {
   name        = "${var.cluster_name}-click-events-firehose"
   destination = "extended_s3"
 
-  kinesis_source_configuration {
-    kinesis_stream_arn = aws_kinesis_stream.click_events.arn
-    role_arn           = aws_iam_role.firehose.arn
-  }
+  # kinesis_source_configuration 블록 없음 = Direct PUT 모드.
+  # redirect-service가 이 스트림에 PutRecord/PutRecordBatch로 직접 씀.
 
   extended_s3_configuration {
     role_arn   = aws_iam_role.firehose.arn

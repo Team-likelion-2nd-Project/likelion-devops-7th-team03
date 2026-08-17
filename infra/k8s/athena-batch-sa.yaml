@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: athena-batch-sa
+  annotations:
+    # athena.tf의 aws_iam_role.athena_cronjob 과 매칭 (assume_role_policy의 :sub 조건과 일치해야 함)
+    eks.amazonaws.com/role-arn: arn:aws:iam::834922934330:role/snipy-cluster-athena-cronjob-role

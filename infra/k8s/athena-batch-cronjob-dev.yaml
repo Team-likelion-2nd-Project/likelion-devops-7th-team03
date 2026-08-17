@@ -1,0 +1,37 @@
+# athena-batch-cronjob-dev.yaml
+# 개발/스테이징 검증용. 15분마다 "어제(KST) 하루치"를 재집계한다.
+# 운영용(athena-batch-cronjob.yaml)과 로직은 동일 — 스케줄과 이름만 다르다.
+# 검증 끝나면 `kubectl delete -f athena-batch-cronjob-dev.yaml`로 지울 것.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: athena-batch-dev
+  labels: { app: athena-batch-dev }
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid       # 이전 실행이 아직 안 끝났으면 새 실행 건너뜀 (같은 날짜 중복 집계 방지)
+  startingDeadlineSeconds: 300
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 900  # 15분 넘으면 강제 종료 (Athena 폴링 무한 대기 방지)
+      template:
+        metadata:
+          labels: { app: athena-batch-dev }
+        spec:
+          serviceAccountName: athena-batch-sa
+          restartPolicy: Never
+          containers:
+            - name: athena-batch
+              # management-service와 같은 이미지 — 프로필만 다르게 실행
+              image: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/management-service:latest
+              env:
+                - name: SPRING_PROFILES_ACTIVE
+                  value: batch
+              envFrom:
+                - configMapRef: { name: management-service-config }
+                - secretRef: { name: management-service-secrets }
+                - configMapRef: { name: athena-batch-config }
+              resources:
+                requests: { cpu: 250m, memory: 512Mi }
+                limits:   { cpu: 500m, memory: 1Gi }

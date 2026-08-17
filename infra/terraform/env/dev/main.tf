@@ -1,12 +1,13 @@
 module "network" {
   source = "../../modules/network"
 
-  cluster_name     = var.cluster_name
-  vpc_cidr         = var.vpc_cidr
-  azs              = var.azs
-  public_subnets   = var.public_subnets
-  private_subnets  = var.private_subnets
-  database_subnets = var.database_subnets
+  cluster_name       = var.cluster_name
+  vpc_cidr           = var.vpc_cidr
+  azs                = var.azs
+  public_subnets     = var.public_subnets
+  private_subnets    = var.private_subnets
+  database_subnets   = var.database_subnets
+  single_nat_gateway = var.single_nat_gateway
 }
 
 module "registry" {
@@ -30,12 +31,16 @@ module "cluster" {
 module "database" {
   source = "../../modules/database"
 
-  cluster_name               = var.cluster_name
-  vpc_id                     = module.network.vpc_id
-  database_subnet_group_name = module.network.database_subnet_group_name
-  database_subnets           = module.network.database_subnets
-  node_security_group_id     = module.cluster.node_security_group_id
-  elasticache_node_type      = var.elasticache_node_type
+  cluster_name                           = var.cluster_name
+  vpc_id                                 = module.network.vpc_id
+  database_subnet_group_name             = module.network.database_subnet_group_name
+  database_subnets                       = module.network.database_subnets
+  node_security_group_id                 = module.cluster.node_security_group_id
+  elasticache_node_type                  = var.elasticache_node_type
+  rds_multi_az                           = var.rds_multi_az
+  elasticache_num_cache_clusters         = var.elasticache_num_cache_clusters
+  elasticache_automatic_failover_enabled = var.elasticache_automatic_failover_enabled
+  elasticache_multi_az_enabled           = var.elasticache_multi_az_enabled
 }
 
 module "streaming" {

@@ -102,17 +102,17 @@ resource "aws_security_group" "elasticache" {
 # Cluster Mode: Disabled (단일 샤드), Primary 1 + Replica 1, Multi-AZ 자동 페일오버
 resource "aws_elasticache_replication_group" "redis" {
   replication_group_id = "${var.cluster_name}-redis"
-  description          = "Snipy Redis - click counters, visitor HLL"
+  description          = "Snipy Redis - Short URL Cache & Real-time Stats"
 
   engine         = "redis"
   engine_version = "7.1"
   node_type      = var.elasticache_node_type
   port           = 6379
 
-  num_cache_clusters = 2 # Primary 1 + Replica 1
+  num_cache_clusters = var.elasticache_num_cache_clusters # prod: 2 (Primary+Replica) / dev: 1
 
-  automatic_failover_enabled = true
-  multi_az_enabled           = true
+  automatic_failover_enabled = var.elasticache_automatic_failover_enabled
+  multi_az_enabled           = var.elasticache_multi_az_enabled
 
   subnet_group_name  = aws_elasticache_subnet_group.redis.name
   security_group_ids = [aws_security_group.elasticache.id]

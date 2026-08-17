@@ -102,3 +102,30 @@ variable "origin_alb_domain_name" {
   type        = string
   default     = "" # Ingress 배포 후 채워서 재적용
 }
+
+variable "single_nat_gateway" {
+  description = "true면 NAT Gateway 1개를 모든 AZ가 공유 (dev용 비용 절감). prod 기본값은 false(AZ당 1개)"
+  type        = bool
+  default     = false
+}
+
+variable "rds_multi_az" {
+  type    = bool
+  default = true
+}
+
+variable "elasticache_num_cache_clusters" {
+  description = "1이면 단일 노드(dev용 비용 절감), 2 이상이면 Primary+Replica"
+  type        = number
+  default     = 2
+}
+
+variable "elasticache_automatic_failover_enabled" {
+  type    = bool
+  default = true
+}
+
+variable "elasticache_multi_az_enabled" {
+  type    = bool
+  default = true
+}

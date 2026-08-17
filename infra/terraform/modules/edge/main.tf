@@ -321,7 +321,13 @@ resource "aws_security_group_rule" "alb_to_nodes" {
 # 이름 대신 태그로 조회 — AWS Load Balancer Controller가 붙이는 태그는
 # Ingress 이름/네임스페이스가 안 바뀌는 한 안정적이라, ALB 이름 해싱 규칙이
 # 바뀌어도(컨트롤러 버전 업 등) 깨지지 않는다.
+#
+# count로 게이팅: k8s Ingress를 아직 배포하지 않은 첫 apply 시점엔 ALB가
+# 존재하지 않아 태그 조회 결과가 빈 리스트라 실패한다. origin_alb_domain_name이
+# 채워진 이후(= Ingress 배포 후 ALB DNS를 확인해 재적용하는 2단계)에만 조회한다.
 data "aws_resourcegroupstaggingapi_resources" "ingress_alb" {
+  count = var.origin_alb_domain_name != "" ? 1 : 0
+
   resource_type_filters = ["elasticloadbalancing:loadbalancer"]
 
   tag_filter {
@@ -336,17 +342,21 @@ data "aws_resourcegroupstaggingapi_resources" "ingress_alb" {
 }
 
 data "aws_lb" "ingress" {
-  arn = data.aws_resourcegroupstaggingapi_resources.ingress_alb.resource_tag_mapping_list[0].resource_arn
+  count = var.origin_alb_domain_name != "" ? 1 : 0
+
+  arn = data.aws_resourcegroupstaggingapi_resources.ingress_alb[0].resource_tag_mapping_list[0].resource_arn
 }
 
 resource "aws_route53_record" "alb_origin" {
+  count = var.origin_alb_domain_name != "" ? 1 : 0
+
   zone_id = data.aws_route53_zone.main.zone_id
   name    = "alb.${var.domain_name}"
   type    = "A"
 
   alias {
-    name                   = data.aws_lb.ingress.dns_name
-    zone_id                = data.aws_lb.ingress.zone_id
+    name                   = data.aws_lb.ingress[0].dns_name
+    zone_id                = data.aws_lb.ingress[0].zone_id
     evaluate_target_health = false
   }
 }

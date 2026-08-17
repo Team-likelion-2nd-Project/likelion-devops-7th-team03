@@ -57,3 +57,17 @@ jwt:
 # 예: 로컬 http://localhost:8080, 운영 https://s.short.ly
 short-url:
   base-url: ${SHORT_URL_BASE_URL}
+
+---
+# batch 프로필: K8s CronJob 전용. 웹서버 안 띄우고 AthenaBatchRunner만 돌고 종료한다.
+spring:
+  config:
+    activate:
+      on-profile: batch
+  main:
+    web-application-type: none
+
+app:
+  athena:
+    workgroup: ${ATHENA_WORKGROUP}
+    database: ${ATHENA_DATABASE:snipy_click_logs}

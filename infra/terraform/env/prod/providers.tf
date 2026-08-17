@@ -20,14 +20,13 @@ terraform {
     }
   }
 
-  # 팀 공용 상태 관리가 필요하면 S3 backend 추가 권장
   backend "s3" {
-    bucket = "snipy-cluster-terraform-state-834922934330"
-    key    = "eks/terraform.tfstate"
-    region = "ap-southeast-1"
+    bucket       = "snipy-cluster-terraform-state-834922934330"
+    key          = "env/prod/terraform.tfstate"
+    region       = "ap-southeast-1"
     encrypt      = true
-    use_lockfile = true   # Terraform 1.10+ 네이티브 S3 잠금, DynamoDB 안 써도 됨
-   }
+    use_lockfile = true # Terraform 1.10+ 네이티브 S3 잠금, DynamoDB 안 써도 됨
+  }
 }
 
 provider "aws" {
@@ -61,8 +60,8 @@ provider "aws" {
 
 # EKS 클러스터 생성 후 kubectl/helm이 해당 클러스터를 바라보도록 연결
 provider "kubernetes" {
-  host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  host                   = module.cluster.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.cluster.cluster_certificate_authority_data)
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
     command     = "aws"
@@ -72,8 +71,8 @@ provider "kubernetes" {
 
 provider "helm" {
   kubernetes {
-    host                   = module.eks.cluster_endpoint
-    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+    host                   = module.cluster.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.cluster.cluster_certificate_authority_data)
     exec {
       api_version = "client.authentication.k8s.io/v1beta1"
       command     = "aws"

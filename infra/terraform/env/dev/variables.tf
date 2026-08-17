@@ -82,7 +82,7 @@ variable "elasticache_node_type" {
 variable "domain_name" {
   description = "서비스 도메인 (Route53에 등록된 도메인)"
   type        = string
-  default = "snipy.life"
+  default     = "snipy.life"
 }
 
 variable "waf_geo_match_enabled" {
@@ -95,4 +95,10 @@ variable "waf_allowed_countries" {
   description = "Geo-Match Rule 허용 국가 코드 (waf_geo_match_enabled=true일 때만 사용)"
   type        = list(string)
   default     = ["KR"]
+}
+
+variable "origin_alb_domain_name" {
+  description = "AWS Load Balancer Controller가 생성한 ALB의 DNS 이름 (Ingress 배포 후 확인하여 입력)"
+  type        = string
+  default     = "" # Ingress 배포 후 채워서 재적용
 }

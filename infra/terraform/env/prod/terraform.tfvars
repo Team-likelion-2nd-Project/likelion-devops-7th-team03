@@ -1,3 +1,6 @@
+environment  = "prod"
+cluster_name = "snipy-cluster"
+
 domain_name           = "snipy.life"
 waf_geo_match_enabled = true
 waf_allowed_countries = ["KR"]

@@ -191,12 +191,6 @@ resource "aws_wafv2_web_acl" "cloudfront" {
 # 여기서는 그 ALB의 도메인을 변수/data source로 받아와야 함.
 # Ingress를 먼저 배포한 뒤, 실제 ALB 도메인을 origin_alb_domain_name에 채워 apply 하거나
 # data "kubernetes_ingress_v1"으로 조회하도록 확장 가능 (여기서는 변수로 단순화)
-variable "origin_alb_domain_name" {
-  description = "AWS Load Balancer Controller가 생성한 ALB의 DNS 이름 (Ingress 배포 후 확인하여 입력)"
-  type        = string
-  default     = "" # Ingress 배포 후 채워서 재적용
-}
-
 resource "aws_cloudfront_distribution" "main" {
   count = var.origin_alb_domain_name != "" ? 1 : 0
 
@@ -292,7 +286,7 @@ data "aws_ec2_managed_prefix_list" "cloudfront" {
 resource "aws_security_group" "alb" {
   name        = "${var.cluster_name}-alb-sg"
   description = "Allow HTTPS only from CloudFront managed prefix list"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = var.vpc_id
 
   ingress {
     description     = "HTTPS from CloudFront"
@@ -318,10 +312,10 @@ resource "aws_security_group_rule" "alb_to_nodes" {
   type                     = "ingress"
   from_port                = 8080
   to_port                  = 8080
-  protocol                  = "tcp"
-  security_group_id        = module.eks.node_security_group_id
+  protocol                 = "tcp"
+  security_group_id        = var.node_security_group_id
   source_security_group_id = aws_security_group.alb.id
-  description               = "ALB to pods (target-type ip) on container port 8080"
+  description              = "ALB to pods (target-type ip) on container port 8080"
 }
 
 # 이름 대신 태그로 조회 — AWS Load Balancer Controller가 붙이는 태그는

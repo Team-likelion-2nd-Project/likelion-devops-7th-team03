@@ -40,6 +40,7 @@ jobs:
       DB_MIGRATOR_PASSWORD: ci-migrator-password
       DB_READONLY_PASSWORD: ci-readonly-password
       JWT_SECRET: 01234567890123456789012345678901
+      FIREHOSE_STREAM_NAME: ci-test-firehose-stream
 
     # 테스트 실행 전, 임시로 MySQL/Redis 컨테이너를 띄워준다.
     # 로컬에서 docker compose up -d mysql redis 하던 것과 동일한 역할.

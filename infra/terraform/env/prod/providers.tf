@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.5"
+  required_version = ">= 1.10" # backend의 use_lockfile(S3 네이티브 락)이 1.10+ 전용
 
   required_providers {
     aws = {
@@ -21,7 +21,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket       = "snipy-cluster-terraform-state-834922934330"
+    bucket       = "snipy-terraform-state-834922934330"
     key          = "env/prod/terraform.tfstate"
     region       = "ap-southeast-1"
     encrypt      = true

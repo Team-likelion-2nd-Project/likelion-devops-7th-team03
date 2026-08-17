@@ -10,8 +10,13 @@ module "network" {
   single_nat_gateway = var.single_nat_gateway
 }
 
-module "registry" {
-  source = "../../modules/registry"
+# ECR은 bootstrap이 소유 (dev와 공유, prod를 destroy해도 이미지가 사라지지 않도록)
+data "aws_ecr_repository" "management_service" {
+  name = "management-service"
+}
+
+data "aws_ecr_repository" "redirect_service" {
+  name = "redirect-service"
 }
 
 module "cluster" {

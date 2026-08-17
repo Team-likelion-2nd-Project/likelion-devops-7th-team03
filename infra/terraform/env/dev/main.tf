@@ -10,8 +10,16 @@ module "network" {
   single_nat_gateway = var.single_nat_gateway
 }
 
-module "registry" {
-  source = "../../modules/registry"
+# ECR은 bootstrap이 소유 (prod와 공유). 이름이 cluster_name으로 구분되지
+# 않는 리터럴이라 dev/prod가 각각 module "registry"를 호출하면 충돌하고,
+# prod를 destroy해도 dev가 쓰는 이미지가 사라지면 안 되므로 env가 아닌
+# bootstrap(state 버킷과 같은 레이어)이 소유한다.
+data "aws_ecr_repository" "management_service" {
+  name = "management-service"
+}
+
+data "aws_ecr_repository" "redirect_service" {
+  name = "redirect-service"
 }
 
 module "cluster" {

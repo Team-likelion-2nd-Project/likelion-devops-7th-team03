@@ -3,15 +3,15 @@ package redirect_service.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
+import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.firehose.FirehoseClient;
 
 /**
  * 자격증명은 SDK 기본 체인이 처리한다 — EKS에서는 IRSA(redirect-service-sa)가 주입하는
  * AWS_ROLE_ARN / AWS_WEB_IDENTITY_TOKEN_FILE 환경변수를 자동으로 읽어간다.
  *
- * @Lazy: 컨텍스트 기동 시점이 아니라 실제로 클릭 이벤트가 처음 발행될 때 생성되도록 지연시킨다.
- * 테스트 환경(CI 등)에는 AWS 리전/자격증명이 없어 즉시 생성 시 SdkClientException이 나는데,
- * 테스트는 실제로 클릭 이벤트를 발행하지 않으므로 지연 생성이면 이 빈 자체가 만들어지지 않는다.
+ * 리전은 자격증명과 달리 클라이언트 생성 시점에 즉시 확인되므로, AWS_REGION이 없는
+ * 환경(로컬 테스트, CI)에서도 빈 생성 자체가 실패하지 않도록 명시적으로 지정한다.
  */
 @Configuration(proxyBeanMethods = false)
 public class FirehoseConfig {
@@ -19,6 +19,8 @@ public class FirehoseConfig {
     @Bean
     @Lazy
     public FirehoseClient firehoseClient() {
-        return FirehoseClient.builder().build();
+        return FirehoseClient.builder()
+                .region(Region.of(System.getenv().getOrDefault("AWS_REGION", "ap-southeast-1")))
+                .build();
     }
 }

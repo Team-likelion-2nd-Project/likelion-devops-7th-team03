@@ -65,6 +65,7 @@ module "edge" {
     aws.us_east_1 = aws.us_east_1
   }
 
+  route53_zone_name = "snipy.life"   # dev/prod 공통 — 실제 등록된 apex 도메인
   cluster_name           = var.cluster_name
   domain_name            = var.domain_name
   vpc_id                 = module.network.vpc_id

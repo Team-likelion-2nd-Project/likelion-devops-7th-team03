@@ -32,3 +32,8 @@ variable "origin_alb_domain_name" {
   type        = string
   default     = "" # Ingress 배포 후 채워서 재적용
 }
+
+variable "route53_zone_name" {
+  description = "Route53에 실제 등록된 apex 도메인 (zone 조회 전용, dev/prod가 같은 값을 공유)"
+  type        = string
+}

@@ -5,15 +5,13 @@ variable "aws_region" {
 }
 
 variable "environment" {
-  description = "Environment name"
+  description = "(dev/prod)"
   type        = string
-  default     = "prod"
 }
 
 variable "cluster_name" {
   description = "EKS cluster name"
   type        = string
-  default     = "snipy-cluster"
 }
 
 variable "cluster_version" {

@@ -2,7 +2,7 @@
 # Route53 Hosted Zone 조회 (이미 등록된 도메인)
 # ══════════════════════════════════════════════════
 data "aws_route53_zone" "main" {
-  name = var.domain_name
+  name = var.route53_zone_name
 }
 
 # ══════════════════════════════════════════════════
@@ -191,12 +191,6 @@ resource "aws_wafv2_web_acl" "cloudfront" {
 # 여기서는 그 ALB의 도메인을 변수/data source로 받아와야 함.
 # Ingress를 먼저 배포한 뒤, 실제 ALB 도메인을 origin_alb_domain_name에 채워 apply 하거나
 # data "kubernetes_ingress_v1"으로 조회하도록 확장 가능 (여기서는 변수로 단순화)
-variable "origin_alb_domain_name" {
-  description = "AWS Load Balancer Controller가 생성한 ALB의 DNS 이름 (Ingress 배포 후 확인하여 입력)"
-  type        = string
-  default     = "" # Ingress 배포 후 채워서 재적용
-}
-
 resource "aws_cloudfront_distribution" "main" {
   count = var.origin_alb_domain_name != "" ? 1 : 0
 
@@ -292,7 +286,7 @@ data "aws_ec2_managed_prefix_list" "cloudfront" {
 resource "aws_security_group" "alb" {
   name        = "${var.cluster_name}-alb-sg"
   description = "Allow HTTPS only from CloudFront managed prefix list"
-  vpc_id      = module.vpc.vpc_id
+  vpc_id      = var.vpc_id
 
   ingress {
     description     = "HTTPS from CloudFront"
@@ -318,16 +312,22 @@ resource "aws_security_group_rule" "alb_to_nodes" {
   type                     = "ingress"
   from_port                = 8080
   to_port                  = 8080
-  protocol                  = "tcp"
-  security_group_id        = module.eks.node_security_group_id
+  protocol                 = "tcp"
+  security_group_id        = var.node_security_group_id
   source_security_group_id = aws_security_group.alb.id
-  description               = "ALB to pods (target-type ip) on container port 8080"
+  description              = "ALB to pods (target-type ip) on container port 8080"
 }
 
 # 이름 대신 태그로 조회 — AWS Load Balancer Controller가 붙이는 태그는
 # Ingress 이름/네임스페이스가 안 바뀌는 한 안정적이라, ALB 이름 해싱 규칙이
 # 바뀌어도(컨트롤러 버전 업 등) 깨지지 않는다.
+#
+# count로 게이팅: k8s Ingress를 아직 배포하지 않은 첫 apply 시점엔 ALB가
+# 존재하지 않아 태그 조회 결과가 빈 리스트라 실패한다. origin_alb_domain_name이
+# 채워진 이후(= Ingress 배포 후 ALB DNS를 확인해 재적용하는 2단계)에만 조회한다.
 data "aws_resourcegroupstaggingapi_resources" "ingress_alb" {
+  count = var.origin_alb_domain_name != "" ? 1 : 0
+
   resource_type_filters = ["elasticloadbalancing:loadbalancer"]
 
   tag_filter {
@@ -342,17 +342,21 @@ data "aws_resourcegroupstaggingapi_resources" "ingress_alb" {
 }
 
 data "aws_lb" "ingress" {
-  arn = data.aws_resourcegroupstaggingapi_resources.ingress_alb.resource_tag_mapping_list[0].resource_arn
+  count = var.origin_alb_domain_name != "" ? 1 : 0
+
+  arn = data.aws_resourcegroupstaggingapi_resources.ingress_alb[0].resource_tag_mapping_list[0].resource_arn
 }
 
 resource "aws_route53_record" "alb_origin" {
+  count = var.origin_alb_domain_name != "" ? 1 : 0
+
   zone_id = data.aws_route53_zone.main.zone_id
   name    = "alb.${var.domain_name}"
   type    = "A"
 
   alias {
-    name                   = data.aws_lb.ingress.dns_name
-    zone_id                = data.aws_lb.ingress.zone_id
+    name                   = data.aws_lb.ingress[0].dns_name
+    zone_id                = data.aws_lb.ingress[0].zone_id
     evaluate_target_health = false
   }
 }

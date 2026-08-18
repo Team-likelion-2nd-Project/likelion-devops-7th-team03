@@ -10,9 +10,10 @@ module "vpc" {
   private_subnets  = var.private_subnets
   database_subnets = var.database_subnets
 
-  # NAT Gateway: AZ당 1개 (총 2개) — 가용성 우선
+  # NAT Gateway: single_nat_gateway=false일 때만 one_nat_gateway_per_az가 적용됨
+  # (prod 기본값 = AZ당 1개로 가용성 우선, dev는 var로 1개 공유해 비용 절감)
   enable_nat_gateway     = true
-  single_nat_gateway     = false
+  single_nat_gateway     = var.single_nat_gateway
   one_nat_gateway_per_az = true
 
   # RDS/ElastiCache Subnet Group 자동 생성

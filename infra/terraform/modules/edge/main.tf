@@ -2,7 +2,7 @@
 # Route53 Hosted Zone 조회 (이미 등록된 도메인)
 # ══════════════════════════════════════════════════
 data "aws_route53_zone" "main" {
-  name = var.domain_name
+  name = var.route53_zone_name
 }
 
 # ══════════════════════════════════════════════════

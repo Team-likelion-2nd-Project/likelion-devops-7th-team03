@@ -17,7 +17,7 @@ elasticache_multi_az_enabled           = false
 
 # TODO: dev/prod를 동시에 apply하면 이 apex 도메인의 Route53 alias가 prod와 충돌한다.
 # 이번 스텝은 구조 확인용이라 값만 임시로 prod와 동일하게 둔다 — 실제 apply 전 dev 전용 서브도메인으로 교체 필요.
-domain_name           = "snipy.life"
+domain_name           = "dev.snipy.life"
 waf_geo_match_enabled = true
 waf_allowed_countries = ["KR"]
 

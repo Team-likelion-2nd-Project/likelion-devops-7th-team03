@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: snipy-prod
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Team-likelion-2nd-Project/likelion-devops-7th-team03.git
+    targetRevision: main
+    path: infra/k8s/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true

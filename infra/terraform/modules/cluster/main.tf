@@ -8,8 +8,23 @@ module "eks" {
   vpc_id     = var.vpc_id
   subnet_ids = var.subnet_ids # 노드는 프라이빗 서브넷에 배치
 
-  cluster_endpoint_public_access           = true # kubectl 접근용 (팀원 IAM 접근 제어는 access_entries로 별도 관리)
-  enable_cluster_creator_admin_permissions = true
+  cluster_endpoint_public_access           = true # access_entries 로 권한 관리
+  enable_cluster_creator_admin_permissions = false
+
+  access_entries = {
+    for arn in var.cluster_admin_arns :
+    split("/", arn)[1] => {
+      principal_arn = arn
+      policy_associations = {
+        admin = {
+          policy_arn   = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = { type = "cluster" }
+        }
+      }
+    }
+  }
+
+  kms_key_administrators = var.cluster_admin_arns
 
   # ── 필수 애드온 ─────────────────────────────
   cluster_addons = {

@@ -20,6 +20,11 @@ variable "cluster_version" {
   default     = "1.31"
 }
 
+variable "cluster_admin_arns" {
+  description = "EKS 클러스터 관리자 권한을 가질 IAM 사용자/역할 ARN 목록"
+  type        = list(string)
+}
+
 variable "vpc_cidr" {
   description = "VPC CIDR block"
   type        = string

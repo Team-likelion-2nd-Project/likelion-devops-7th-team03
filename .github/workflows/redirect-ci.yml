@@ -188,3 +188,4 @@ jobs:
           git diff --cached --quiet && exit 0   # 변경 없으면 커밋 스킵 (동일 태그 재실행 등)
           git commit -m "chore: redirect-service 이미지 태그 갱신 ($IMAGE_TAG)"
           git push origin HEAD:${{ github.ref_name }}
+

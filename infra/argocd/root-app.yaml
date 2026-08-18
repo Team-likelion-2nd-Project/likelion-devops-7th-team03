@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/Team-likelion-2nd-Project/likelion-devops-7th-team03.git
-    targetRevision: feat/#116-argocd-helm-install
+    targetRevision: develop
     path: infra/argocd/dev
   destination:
     server: https://kubernetes.default.svc

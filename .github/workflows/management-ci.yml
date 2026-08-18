@@ -147,7 +147,6 @@ jobs:
     steps:
       - name: 코드 체크아웃
         uses: actions/checkout@v4
-
       - name: AWS 자격증명 설정
         uses: aws-actions/configure-aws-credentials@v4
         with:

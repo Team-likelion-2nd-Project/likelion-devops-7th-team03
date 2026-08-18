@@ -1,0 +1,14 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: snipy-ingress
+  annotations:
+    # dev 전용 도메인/ACM 인증서가 아직 결정되지 않았음 (env/dev/terraform.tfvars의
+    # domain_name TODO와 같은 이슈). dev용 값이 정해지면 여기 채우고, 그 전엔
+    # prod와 동시에 적용하지 말 것 — snipy.life apex를 두 클러스터가 다투게 된다.
+    alb.ingress.kubernetes.io/certificate-arn: "TODO: dev 전용 도메인/ACM 인증서 필요 (prod cert 재사용 불가)"
+    # env/dev terraform apply 후 `terraform output alb_security_group_id`로 채우기
+    alb.ingress.kubernetes.io/security-groups: "TODO: env/dev terraform apply 후 alb_security_group_id 채우기"
+spec:
+  rules:
+    - host: "TODO: dev 전용 서브도메인 결정 필요" # env/dev/terraform.tfvars의 domain_name TODO와 동일 이슈

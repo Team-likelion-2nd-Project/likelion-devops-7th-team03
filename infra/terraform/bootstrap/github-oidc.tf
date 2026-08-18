@@ -28,15 +28,13 @@ resource "aws_iam_role" "github_actions_ci" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          "token.actions.githubusercontent.com:sub" = [
+            "repo:Team-likelion-2nd-Project@312237597/likelion-devops-7th-team03@1320904339:ref:refs/heads/develop",
+            "repo:Team-likelion-2nd-Project@312237597/likelion-devops-7th-team03@1320904339:ref:refs/heads/main",
+          ]
         }
         # 이미지 push가 실제로 일어나는 develop/main push 이벤트에서만 assume 허용
         # (PR 이벤트나 다른 브랜치에선 이 role을 못 씀)
-        StringLike = {
-          "token.actions.githubusercontent.com:sub" = [
-            "repo:Team-likelion-2nd-Project/likelion-devops-7th-team03:ref:refs/heads/develop",
-            "repo:Team-likelion-2nd-Project/likelion-devops-7th-team03:ref:refs/heads/main",
-          ]
-        }
       }
     }]
   })

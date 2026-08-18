@@ -8,6 +8,11 @@ variable "cluster_version" {
   type        = string
 }
 
+variable "cluster_admin_arns" {
+  description = "EKS admin IAM user arn list"
+  type = list(string)
+}
+
 variable "aws_region" {
   type = string
 }

@@ -12,6 +12,13 @@ elasticache_num_cache_clusters         = 2
 elasticache_automatic_failover_enabled = true
 elasticache_multi_az_enabled           = true
 
+cluster_admin_arns = [
+  "arn:aws:iam::834922934330:user/team03-user01",
+  "arn:aws:iam::834922934330:user/team03-user02",
+  "arn:aws:iam::834922934330:user/team03-user03",
+  "arn:aws:iam::834922934330:user/team03-user04"
+]
+
 domain_name           = "snipy.life"
 waf_geo_match_enabled = true
 waf_allowed_countries = ["KR"]

@@ -128,8 +128,14 @@ resource "aws_cloudfront_distribution" "frontend" {
     cached_methods         = ["GET", "HEAD"]
     target_origin_id       = "s3-frontend-origin"
     viewer_protocol_policy = "redirect-to-https"
-    cache_policy_id        = data.aws_cloudfront_cache_policy.caching_optimized.id
-    compress               = true
+    # Managed-CachingOptimized의 기본 TTL은 1일이지만, 오리진(S3)이 명시적
+    # Cache-Control을 주면 그걸 우선한다. index.html은 배포 시
+    # `aws s3 cp ... --cache-control "no-cache, no-store, must-revalidate"`로
+    # 해시 안 붙은 진입점 파일이라 즉시 갱신되어야 하기 때문 — 그래서 실제로는
+    # 1일 캐시되지 않는다. 이 짧은 TTL은 이 리소스가 아니라 배포 스크립트가
+    # 보장한다 (여기서 강제하지 않음 — 배포 커맨드를 빠뜨리면 깨질 수 있음).
+    cache_policy_id = data.aws_cloudfront_cache_policy.caching_optimized.id
+    compress        = true
   }
 
   # SPA(React Router)라 존재하지 않는 경로는 index.html로 돌려보내 클라이언트 라우팅에 맡긴다.

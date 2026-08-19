@@ -8,3 +8,4 @@ resources:
 
 patches:
   - path: patch-athena-configmap.yaml
+  - path: patch-athena-sa.yaml

@@ -33,7 +33,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/kakao/login", "/api/auth/logout", "/api/auth/reissue",
-                                "/actuator/health/**").permitAll()
+                                "/actuator/health/**", "/actuator/prometheus").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(
                         (request, response, authException) -> {

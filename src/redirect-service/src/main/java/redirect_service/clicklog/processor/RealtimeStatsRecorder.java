@@ -1,5 +1,7 @@
 package redirect_service.clicklog.processor;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -50,11 +52,22 @@ public class RealtimeStatsRecorder {
     private final RealtimeStatsRecorderProperties properties;
     private final BlockingQueue<ClickEvent> pendingEvents;
     private final AtomicLong droppedEventCount = new AtomicLong();
+    private final Counter flushSuccessCounter;
+    private final Counter flushFailureCounter;
 
-    public RealtimeStatsRecorder(StringRedisTemplate redisTemplate, RealtimeStatsRecorderProperties properties) {
+    public RealtimeStatsRecorder(StringRedisTemplate redisTemplate, RealtimeStatsRecorderProperties properties,
+            MeterRegistry meterRegistry) {
         this.redisTemplate = redisTemplate;
         this.properties = properties;
         this.pendingEvents = new ArrayBlockingQueue<>(properties.getBufferCapacity());
+        this.flushSuccessCounter = Counter.builder("redirect_click_stats_flush_total")
+                .tag("result", "success")
+                .description("Realtime stats Redis pipeline flush outcomes")
+                .register(meterRegistry);
+        this.flushFailureCounter = Counter.builder("redirect_click_stats_flush_total")
+                .tag("result", "failure")
+                .description("Realtime stats Redis pipeline flush outcomes")
+                .register(meterRegistry);
     }
 
     @Async("realtimeStatsRecorderExecutor")
@@ -95,8 +108,10 @@ public class RealtimeStatsRecorder {
                     return null;
                 }
             });
+            flushSuccessCounter.increment();
         } catch (RuntimeException exception) {
             // 파이프라인 실패 뒤 일부 명령 반영 여부는 알 수 없다. 재시도하면 클릭 수를 과대 계상한다.
+            flushFailureCounter.increment();
             log.warn("Realtime Redis stats batch was dropped. batchSize={}", batch.size(), exception);
         }
     }

@@ -11,6 +11,8 @@ resources:
 - athena-batch-sa.yaml
 - athena-batch-cronjob.yaml
 - athena-batch-configmap.yaml
+- cluster-secret-store.yaml
+
 images:
 - name: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/management-service
   newName: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/management-service

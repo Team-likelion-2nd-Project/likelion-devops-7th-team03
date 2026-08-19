@@ -39,6 +39,22 @@ resource "aws_secretsmanager_secret_version" "rds_password" {
   secret_string = random_password.rds_master.result
 }
 
+#── RDS APP 비밀번호 (Secrets Manager에 자동 저장) ───
+resource "random_password" "rds_app_user" {
+  length = 20
+  special = false
+}
+
+resource "aws_secretsmanager_secret" "rds_app_password" {
+  name = "${var.cluster_name}/rds/app-user-password"
+  recovery_window_in_days = 0
+}
+
+resource "aws_secretsmanager_secret_version" "rds_app_password" {
+  secret_id = aws_secretsmanager_secret.rds_app_password.id
+  secret_string = random_password.rds_app_user.result
+}
+
 # ── RDS 인스턴스 ───────────────────────────────
 # Multi-AZ로 이중화 (Primary + Standby, 동기 복제)
 resource "aws_db_instance" "main" {

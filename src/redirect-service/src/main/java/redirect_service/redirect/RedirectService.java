@@ -1,8 +1,9 @@
 package redirect_service.redirect;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import redirect_service.exception.RedirectNotFoundException;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import redirect_service.clicklog.event.ClickRequestSnapshot;
@@ -10,16 +11,38 @@ import redirect_service.clicklog.event.RedirectSucceededEvent;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.Optional;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class RedirectService {
 
     private final LinkRepository linkRepository;
     private final RedisRedirectCache redirectCache;
     private final ApplicationEventPublisher eventPublisher;
+    private final Counter successOutcomeCounter;
+    private final Map<RedirectNotFoundException.Reason, Counter> failureOutcomeCounters;
+
+    public RedirectService(LinkRepository linkRepository, RedisRedirectCache redirectCache,
+            ApplicationEventPublisher eventPublisher, MeterRegistry meterRegistry) {
+        this.linkRepository = linkRepository;
+        this.redirectCache = redirectCache;
+        this.eventPublisher = eventPublisher;
+        this.successOutcomeCounter = outcomeCounter(meterRegistry, "SUCCESS");
+        this.failureOutcomeCounters = new EnumMap<>(RedirectNotFoundException.Reason.class);
+        for (RedirectNotFoundException.Reason reason : RedirectNotFoundException.Reason.values()) {
+            failureOutcomeCounters.put(reason, outcomeCounter(meterRegistry, reason.name()));
+        }
+    }
+
+    private static Counter outcomeCounter(MeterRegistry meterRegistry, String outcome) {
+        return Counter.builder("redirect_outcome_total")
+                .tag("outcome", outcome)
+                .description("Final outcome of a redirect request")
+                .register(meterRegistry);
+    }
 
     /**
      * 리다이렉트가 가능한 경우에만 방문자 식별을 확정하고 원본 클릭 이벤트를 발행한다.
@@ -42,9 +65,16 @@ public class RedirectService {
     }
 
     public RedirectTarget findRedirectTarget(String slug, LocalDateTime utcNow) {
-        // 캐시 우선 조회 (Cache Miss 시 DB 조회로 fallback)
-        return findCachedRedirectTarget(slug, utcNow)
-                .orElseGet(() -> findDatabaseRedirectTarget(slug, utcNow));
+        try {
+            // 캐시 우선 조회 (Cache Miss 시 DB 조회로 fallback)
+            RedirectTarget target = findCachedRedirectTarget(slug, utcNow)
+                    .orElseGet(() -> findDatabaseRedirectTarget(slug, utcNow));
+            successOutcomeCounter.increment();
+            return target;
+        } catch (RedirectNotFoundException exception) {
+            failureOutcomeCounters.get(exception.reason()).increment();
+            throw exception;
+        }
     }
 
     private Optional<RedirectTarget> findCachedRedirectTarget(String slug, LocalDateTime now) {
@@ -60,7 +90,7 @@ public class RedirectService {
         log.debug("Redirect cache hit. slug={}", slug);
         RedirectCacheEntry entry = cachedEntry.get();
         if (!entry.isRedirectable(now)) {
-            throw new RedirectNotFoundException();
+            throw new RedirectNotFoundException(unavailableReason(entry.isEnabled()));
         }
 
         // 3. Cache Hit & 정상 리다이렉트 가능
@@ -71,7 +101,7 @@ public class RedirectService {
     private RedirectTarget findDatabaseRedirectTarget(String slug, LocalDateTime now) {
         // 1. DB에서 링크 조회 (아예 존재하지 않는 slug면 404 예외)
         Link link = linkRepository.findBySlug(slug)
-                .orElseThrow(RedirectNotFoundException::new);
+                .orElseThrow(() -> new RedirectNotFoundException(RedirectNotFoundException.Reason.NOT_FOUND));
 
         // 2. 만료/비활성 링크도 캐시에 저장해 다음 요청을 DB 없이 404로 처리한다.
         RedirectCacheEntry cacheEntry = new RedirectCacheEntry(
@@ -84,9 +114,16 @@ public class RedirectService {
 
         // 3. 리다이렉트 불가능한 상태면 예외 발생
         if (!link.isRedirectable(now)) {
-            throw new RedirectNotFoundException();
+            throw new RedirectNotFoundException(unavailableReason(link.isEnabled()));
         }
 
         return cacheEntry.toRedirectTarget();
+    }
+
+    /**
+     * isRedirectable()이 false인 이유는 비활성화 또는 만료 둘 중 하나뿐이다.
+     */
+    private RedirectNotFoundException.Reason unavailableReason(boolean enabled) {
+        return enabled ? RedirectNotFoundException.Reason.EXPIRED : RedirectNotFoundException.Reason.DISABLED;
     }
 }

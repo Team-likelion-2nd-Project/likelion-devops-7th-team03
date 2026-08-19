@@ -1,6 +1,8 @@
 package redirect_service.redirect;
 
-import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -15,7 +17,6 @@ import java.util.Optional;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class RedisRedirectCache {
 
     private static final String KEY_PREFIX = "link:";
@@ -42,19 +43,50 @@ public class RedisRedirectCache {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final RedirectProperties properties;
+    private final Counter cacheHitCounter;
+    private final Counter cacheMissCounter;
+    private final Counter cacheErrorCounter;
+    private final Timer cacheLookupTimer;
+
+    public RedisRedirectCache(StringRedisTemplate stringRedisTemplate, RedirectProperties properties,
+            MeterRegistry meterRegistry) {
+        this.stringRedisTemplate = stringRedisTemplate;
+        this.properties = properties;
+        this.cacheHitCounter = Counter.builder("redirect_cache_result_total")
+                .tag("result", "hit")
+                .description("Redirect cache lookup results")
+                .register(meterRegistry);
+        this.cacheMissCounter = Counter.builder("redirect_cache_result_total")
+                .tag("result", "miss")
+                .description("Redirect cache lookup results")
+                .register(meterRegistry);
+        this.cacheErrorCounter = Counter.builder("redirect_cache_result_total")
+                .tag("result", "error")
+                .description("Redirect cache lookup results")
+                .register(meterRegistry);
+        this.cacheLookupTimer = Timer.builder("redirect_cache_lookup_duration_seconds")
+                .description("Redirect cache lookup latency")
+                .register(meterRegistry);
+    }
 
     public Optional<RedirectCacheEntry> get(String slug) {
+        Timer.Sample sample = Timer.start();
         try {
             Map<Object, Object> fields = stringRedisTemplate.opsForHash().entries(key(slug));
 
             if (fields.isEmpty()) {
+                cacheMissCounter.increment();
                 return Optional.empty();
             }
 
+            cacheHitCounter.increment();
             return Optional.of(toEntry(fields));
         } catch (Exception exception) {
+            cacheErrorCounter.increment();
             log.warn("캐시 조회 중 예외가 발생하여 DB 조회를 수행합니다. slug={}", slug, exception);
             return Optional.empty();
+        } finally {
+            sample.stop(cacheLookupTimer);
         }
     }
 

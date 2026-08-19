@@ -117,7 +117,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./local/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     depends_on:
@@ -130,7 +130,7 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./local/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana
     ports:
       - "${GRAFANA_PORT:-3001}:3000"

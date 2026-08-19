@@ -3,11 +3,11 @@ package redirect_service.redirect;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
-import redirect_service.exception.RedirectNotFoundException;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import redirect_service.clicklog.event.ClickRequestSnapshot;
 import redirect_service.clicklog.event.RedirectSucceededEvent;
+import redirect_service.exception.RedirectNotFoundException;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -35,13 +35,6 @@ public class RedirectService {
         for (RedirectNotFoundException.Reason reason : RedirectNotFoundException.Reason.values()) {
             failureOutcomeCounters.put(reason, outcomeCounter(meterRegistry, reason.name()));
         }
-    }
-
-    private static Counter outcomeCounter(MeterRegistry meterRegistry, String outcome) {
-        return Counter.builder("redirect_outcome_total")
-                .tag("outcome", outcome)
-                .description("Final outcome of a redirect request")
-                .register(meterRegistry);
     }
 
     /**
@@ -118,5 +111,12 @@ public class RedirectService {
      */
     private RedirectNotFoundException.Reason unavailableReason(boolean enabled) {
         return enabled ? RedirectNotFoundException.Reason.EXPIRED : RedirectNotFoundException.Reason.DISABLED;
+    }
+
+    private static Counter outcomeCounter(MeterRegistry meterRegistry, String outcome) {
+        return Counter.builder("redirect_outcome_total")
+                .tag("outcome", outcome)
+                .description("Final outcome of a redirect request")
+                .register(meterRegistry);
     }
 }

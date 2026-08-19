@@ -75,3 +75,9 @@ module "edge" {
   waf_allowed_countries  = var.waf_allowed_countries
   origin_alb_domain_name = var.origin_alb_domain_name
 }
+
+module "gitops" {
+  source = "../../modules/gitops"
+
+  depends_on = [module.cluster]
+}

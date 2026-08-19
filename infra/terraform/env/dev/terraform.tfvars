@@ -28,4 +28,4 @@ waf_allowed_countries = ["KR"]
 
 # 1단계 apply: 비워둔 채로 적용 (ALB가 아직 없어서 CloudFront/ALB 조회 리소스는 스킵됨)
 # 2단계: k8s Ingress 배포 후 실제 ALB DNS 이름을 확인해 채우고 재적용 (prod와 동일한 절차)
-origin_alb_domain_name = ""
+origin_alb_domain_name = "k8s-default-snipying-863e89ce38-1379313536.ap-southeast-1.elb.amazonaws.com"

@@ -183,11 +183,25 @@ jobs:
           ECR_REPOSITORY: redirect-service
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          kustomize edit set image $ECR_REGISTRY/$ECR_REPOSITORY=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add kustomization.yaml
-          git diff --cached --quiet && exit 0   # 변경 없으면 커밋 스킵 (동일 태그 재실행 등)
-          git commit -m "chore: redirect-service 이미지 태그 갱신 ($IMAGE_TAG)"
-          git push origin HEAD:${{ github.ref_name }}
+          for i in 1 2 3 4 5; do
+            git fetch origin ${{ github.ref_name }}
+            git reset --hard origin/${{ github.ref_name }}
+            kustomize edit set image $ECR_REGISTRY/$ECR_REPOSITORY=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+            git add kustomization.yaml
+            if git diff --cached --quiet; then
+              echo "변경 없음, 종료"
+              exit 0
+            fi
+            git commit -m "chore: redirect-service 이미지 태그 갱신 ($IMAGE_TAG)"
+            if git push origin HEAD:${{ github.ref_name }}; then
+              echo "push 성공"
+              exit 0
+            fi
+            echo "push 실패, 재시도 ($i/5)"
+            sleep $(( (RANDOM % 5) + 1 ))
+          done
+          echo "최대 재시도 횟수 초과"
+          exit 1
 

@@ -60,8 +60,8 @@ output "rds_password_secret_arn" {
   value       = module.database.rds_password_secret_arn
 }
 
-output "kinesis_stream_name" {
-  value = module.streaming.kinesis_stream_name
+output "firehose_delivery_stream_name" {
+  value = module.streaming.firehose_delivery_stream_name
 }
 
 output "click_logs_bucket" {

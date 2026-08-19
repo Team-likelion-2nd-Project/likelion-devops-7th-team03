@@ -12,6 +12,7 @@ resources:
 - service-monitor-redirect.yaml
 - service-monitor-management.yaml
 - grafana-dashboards.yaml
+- storageclass-gp3.yaml
 images:
 - name: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/management-service
   newName: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/management-service

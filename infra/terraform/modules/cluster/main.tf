@@ -37,7 +37,6 @@ module "eks" {
     kube-proxy = {
       most_recent = true
     }
-    # EBS CSI Driver는 설치하지 않음 — RDS/ElastiCache 모두 외부 관리형이라 불필요
   }
 
   # ── Managed Node Group ──────────────────────
@@ -181,4 +180,36 @@ resource "helm_release" "aws_load_balancer_controller" {
   }
 
   depends_on = [module.eks, module.irsa_aws_load_balancer_controller]
+}
+
+# ══════════════════════════════════════════════════
+# EBS CSI Driver
+# ══════════════════════════════════════════════════
+# Prometheus/Grafana(kube-prometheus-stack)를 EBS 기반 PVC로 영속화하기 위해 필요.
+# cluster_addons 안에 바로 못 넣는 이유: service_account_role_arn이
+# module.eks.oidc_provider_arn을 참조하는 IRSA 리소스에서 나오는데, 그걸
+# module "eks" 입력값(cluster_addons)에 넣으면 모듈이 자기 자신의 출력을
+# 입력으로 참조하는 순환 의존성이 생김. 그래서 별도 aws_eks_addon 리소스로 분리.
+module "irsa_ebs_csi_driver" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "~> 5.39"
+
+  role_name = "${var.cluster_name}-ebs-csi-driver"
+
+  attach_ebs_csi_policy = true
+
+  oidc_providers = {
+    main = {
+      provider_arn               = module.eks.oidc_provider_arn
+      namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
+    }
+  }
+}
+
+resource "aws_eks_addon" "ebs_csi_driver" {
+  cluster_name             = module.eks.cluster_name
+  addon_name               = "aws-ebs-csi-driver"
+  service_account_role_arn = module.irsa_ebs_csi_driver.iam_role_arn
+
+  depends_on = [module.eks, module.irsa_ebs_csi_driver]
 }

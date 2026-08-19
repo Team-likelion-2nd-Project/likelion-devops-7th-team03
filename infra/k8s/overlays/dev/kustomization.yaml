@@ -8,4 +8,3 @@ resources:
 patches:
   - path: patch-sa.yaml
   - path: patch-ingress.yaml
-  - path: patch-replicas.yaml

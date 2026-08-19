@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class RealtimeStatsRecorder {
 
     static final ZoneId KST = ZoneId.of("Asia/Seoul");
-    // Redis key contract: stats:{KST date}:link:{internal linkId}:{clicks|uv}
+    // Redis 키 형식: stats:{KST 날짜}:link:{내부 linkId}:{clicks|uv}
     private static final String CLICKS_KEY_PATTERN = "stats:%s:link:%d:clicks";
     private static final String UNIQUE_VISITORS_KEY_PATTERN = "stats:%s:link:%d:uv";
 
@@ -76,7 +76,7 @@ public class RealtimeStatsRecorder {
         if (!pendingEvents.offer(clickEvent)) {
             long dropped = droppedEventCount.incrementAndGet();
             if (dropped == 1 || dropped % 1_000 == 0) {
-                log.warn("Realtime Redis stats buffer is full; droppedEvents={}", dropped);
+                log.warn("실시간 통계 버퍼가 가득 차 클릭 이벤트가 드롭됐습니다. droppedEvents={}", dropped);
             }
         }
     }
@@ -112,7 +112,7 @@ public class RealtimeStatsRecorder {
         } catch (RuntimeException exception) {
             // 파이프라인 실패 뒤 일부 명령 반영 여부는 알 수 없다. 재시도하면 클릭 수를 과대 계상한다.
             flushFailureCounter.increment();
-            log.warn("Realtime Redis stats batch was dropped. batchSize={}", batch.size(), exception);
+            log.warn("실시간 통계 Redis 배치 반영에 실패해 드롭됐습니다. batchSize={}", batch.size(), exception);
         }
     }
 

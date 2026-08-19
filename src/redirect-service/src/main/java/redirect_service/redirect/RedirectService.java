@@ -55,7 +55,7 @@ public class RedirectService {
         try {
             eventPublisher.publishEvent(new RedirectSucceededEvent(target.linkId(), snapshot));
         } catch (RuntimeException exception) {
-            log.warn("Redirect event dispatch failed; redirect will continue. linkId={}", target.linkId(), exception);
+            log.warn("클릭 이벤트 발행 중 예외가 발생했으나 리다이렉트는 계속 진행합니다. linkId={}", target.linkId(), exception);
         }
         return target;
     }
@@ -64,9 +64,11 @@ public class RedirectService {
         return findRedirectTarget(slug, LocalDateTime.now(ZoneOffset.UTC));
     }
 
+    /**
+     * 캐시를 우선 조회하고, 캐시 미스일 때만 DB를 조회한다(cache-aside).
+     */
     public RedirectTarget findRedirectTarget(String slug, LocalDateTime utcNow) {
         try {
-            // 캐시 우선 조회 (Cache Miss 시 DB 조회로 fallback)
             RedirectTarget target = findCachedRedirectTarget(slug, utcNow)
                     .orElseGet(() -> findDatabaseRedirectTarget(slug, utcNow));
             successOutcomeCounter.increment();
@@ -79,31 +81,24 @@ public class RedirectService {
 
     private Optional<RedirectTarget> findCachedRedirectTarget(String slug, LocalDateTime now) {
         Optional<RedirectCacheEntry> cachedEntry = redirectCache.get(slug);
-
-        // 1. Cache Miss : 캐시에 데이터가 없는 경우
         if (cachedEntry.isEmpty()) {
-            log.debug("Redirect cache miss. slug={}", slug);
+            log.debug("리다이렉트 캐시 미스. slug={}", slug);
             return Optional.empty();
         }
-        
-        // 2. Cache Hit : 캐시에 존재하지만, 리다이렉트 불가능한 상태인 경우
-        log.debug("Redirect cache hit. slug={}", slug);
+
+        log.debug("리다이렉트 캐시 히트. slug={}", slug);
         RedirectCacheEntry entry = cachedEntry.get();
         if (!entry.isRedirectable(now)) {
             throw new RedirectNotFoundException(unavailableReason(entry.isEnabled()));
         }
-
-        // 3. Cache Hit & 정상 리다이렉트 가능
         return Optional.of(entry.toRedirectTarget());
-
     }
 
     private RedirectTarget findDatabaseRedirectTarget(String slug, LocalDateTime now) {
-        // 1. DB에서 링크 조회 (아예 존재하지 않는 slug면 404 예외)
         Link link = linkRepository.findBySlug(slug)
                 .orElseThrow(() -> new RedirectNotFoundException(RedirectNotFoundException.Reason.NOT_FOUND));
 
-        // 2. 만료/비활성 링크도 캐시에 저장해 다음 요청을 DB 없이 404로 처리한다.
+        // 만료/비활성 링크도 캐시에 저장해 다음 요청을 DB 없이 404로 처리한다.
         RedirectCacheEntry cacheEntry = new RedirectCacheEntry(
                 link.getId(),
                 link.getOriginalUrl(),
@@ -112,11 +107,9 @@ public class RedirectService {
         );
         redirectCache.put(slug, cacheEntry);
 
-        // 3. 리다이렉트 불가능한 상태면 예외 발생
         if (!link.isRedirectable(now)) {
             throw new RedirectNotFoundException(unavailableReason(link.isEnabled()));
         }
-
         return cacheEntry.toRedirectTarget();
     }
 

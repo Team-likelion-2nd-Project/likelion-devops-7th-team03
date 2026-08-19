@@ -81,7 +81,7 @@ public class RedisRedirectCache {
 
             cacheHitCounter.increment();
             return Optional.of(toEntry(fields));
-        } catch (Exception exception) {
+        } catch (RuntimeException exception) {
             cacheErrorCounter.increment();
             log.warn("캐시 조회 중 예외가 발생하여 DB 조회를 수행합니다. slug={}", slug, exception);
             return Optional.empty();
@@ -92,7 +92,7 @@ public class RedisRedirectCache {
 
     public void put(String slug, RedirectCacheEntry entry) {
         try {
-            // Lua Script를 사용하여 1 RT 및 원자적 실행 처리
+            // Lua Script로 HSET+EXPIRE를 한 번의 네트워크 왕복으로 원자적 처리
             stringRedisTemplate.execute(
                     PUT_CACHE_SCRIPT,
                     List.of(key(slug)),                                            // KEYS[1]
@@ -102,7 +102,7 @@ public class RedisRedirectCache {
                     entry.expiresAt() == null ? "" : entry.expiresAt().toString(),  // ARGV[4]
                     String.valueOf(properties.getCacheTtl().getSeconds())          // ARGV[5]
             );
-        } catch (Exception exception) {
+        } catch (RuntimeException exception) {
             log.warn("캐시 저장(put) 중 예외가 발생했으나 캐시 없이 처리를 진행합니다. slug={}", slug, exception);
         }
     }

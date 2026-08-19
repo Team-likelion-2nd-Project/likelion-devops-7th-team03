@@ -66,7 +66,7 @@ module "edge" {
     aws.us_east_1 = aws.us_east_1
   }
 
-  route53_zone_name = "snipy.life"   # dev/prod 공통 — 실제 등록된 apex 도메인
+  route53_zone_name      = "snipy.life" # dev/prod 공통 — 실제 등록된 apex 도메인
   cluster_name           = var.cluster_name
   domain_name            = var.domain_name
   vpc_id                 = module.network.vpc_id
@@ -74,6 +74,17 @@ module "edge" {
   waf_geo_match_enabled  = var.waf_geo_match_enabled
   waf_allowed_countries  = var.waf_allowed_countries
   origin_alb_domain_name = var.origin_alb_domain_name
+}
+
+module "frontend" {
+  source = "../../modules/frontend"
+  providers = {
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  cluster_name      = var.cluster_name
+  domain_name       = "app.${var.domain_name}"
+  route53_zone_name = "snipy.life" # dev/prod 공통 — 실제 등록된 apex 도메인 (modules/edge와 동일)
 }
 
 module "gitops" {

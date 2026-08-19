@@ -122,6 +122,7 @@ resource "kubernetes_config_map" "management_service_config" {
     JWT_ACCESS_TOKEN_VALIDITY_SECONDS  = "1800"
     JWT_REFRESH_TOKEN_VALIDITY_SECONDS = "1209600"
     SHORT_URL_BASE_URL                 = "https://${var.domain_name}"
+    CORS_ALLOWED_ORIGINS               = "https://app.${var.domain_name}"
   }
 
   depends_on = [module.database]

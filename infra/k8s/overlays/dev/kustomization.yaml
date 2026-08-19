@@ -9,3 +9,4 @@ patches:
   - path: patch-ingress.yaml
   - path: patch-replicas.yaml
   - path: patch-athena-cronjob.yaml
+  - path: patch-athena-configmap.yaml

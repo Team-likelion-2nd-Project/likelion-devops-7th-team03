@@ -5,3 +5,6 @@ kind: Kustomization
 # 지금까지의 kubectl apply -f infra/k8s/ 와 결과가 동일하다.
 resources:
   - ../../base
+
+patches:
+  - path: patch-athena-configmap.yaml

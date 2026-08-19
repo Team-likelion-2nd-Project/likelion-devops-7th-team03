@@ -3,4 +3,4 @@ kind: ConfigMap
 metadata:
   name: athena-batch-config
 data:
-  ATHENA_WORKGROUP: "snipy-cluster-workgroup"
+  ATHENA_WORKGROUP: "PLACEHOLDER"  # overlays/{dev,prod}에서 실제 값으로 덮어씀

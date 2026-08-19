@@ -118,3 +118,20 @@ output "cloudfront_domain_name" {
   description = "origin_alb_domain_name 채운 뒤 apply해야 값이 생김"
   value       = module.edge.cloudfront_domain_name
 }
+
+output "frontend_url" {
+  value = module.frontend.frontend_url
+}
+
+output "frontend_s3_bucket_name" {
+  value = module.frontend.s3_bucket_name
+}
+
+output "frontend_cloudfront_domain_name" {
+  value = module.frontend.cloudfront_domain_name
+}
+
+output "frontend_acm_certificate_arn" {
+  description = "us-east-1에 발급된 프론트엔드 전용 ACM 인증서"
+  value       = module.frontend.acm_certificate_arn
+}

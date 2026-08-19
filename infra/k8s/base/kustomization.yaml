@@ -2,9 +2,13 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  - management-service-deployment.yaml
-  - management-service-service.yaml
-  - redirect-service-deployment.yaml
-  - redirect-service-service.yaml
-  - redirect-service-sa.yaml
-  - ingress-with-origin-verify.yaml
+- management-service-deployment.yaml
+- management-service-service.yaml
+- redirect-service-deployment.yaml
+- redirect-service-service.yaml
+- redirect-service-sa.yaml
+- ingress-with-origin-verify.yaml
+images:
+- name: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/management-service
+  newName: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/management-service
+  newTag: 5435315ade2888c177bca8cd16ac858ff311478a

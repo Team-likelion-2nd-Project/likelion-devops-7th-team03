@@ -9,6 +9,9 @@ services:
       MYSQL_DATABASE: ${DB_NAME:-shortlink}
       MYSQL_USER: ${DB_APP_USER:-shortlink_app}
       MYSQL_PASSWORD: ${DB_APP_PASSWORD}
+      # migration 컨테이너가 root로 초기 DB/계정을 만들 수 있게 한다.
+      # 포트는 로컬 호스트에만 열리며, root 비밀번호는 .env로만 주입한다.
+      MYSQL_ROOT_HOST: "%"
     ports:
       - "${MYSQL_PORT:-3306}:3306"
     volumes:
@@ -24,6 +27,28 @@ services:
     ports:
       - "${REDIS_PORT:-6379}:6379"
 
+  migration:
+    # 애플리케이션보다 먼저 DB 계정과 스키마를 준비하는 일회성 작업이다.
+    image: mysql:8.0
+    working_dir: /migrations
+    entrypoint: ["/bin/bash", "/migrations/run-migration.sh"]
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-shortlink}
+      DB_ROOT_USER: root
+      DB_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      APP_PASSWORD: ${DB_APP_PASSWORD}
+      MIGRATOR_PASSWORD: ${DB_MIGRATOR_PASSWORD}
+      READONLY_PASSWORD: ${READONLY_PASSWORD:-readonly_local_pw}
+      DB_MIGRATOR_USER: ${DB_MIGRATOR_USER:-shortlink_migrator}
+    volumes:
+      - ./src/db:/migrations:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
   management-service:
     build:
       context: ./src/management-service
@@ -34,6 +59,7 @@ services:
       DB_NAME: ${DB_NAME:-shortlink}
       DB_APP_USER: ${DB_APP_USER:-shortlink_app}
       DB_APP_PASSWORD: ${DB_APP_PASSWORD}
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${DB_NAME:-shortlink}?serverTimezone=UTC&characterEncoding=UTF-8&rewriteBatchedStatements=true&useSSL=false&allowPublicKeyRetrieval=true
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIRECT_CACHE_TTL: ${REDIRECT_CACHE_TTL:-10m}
@@ -51,11 +77,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+      migration:
+        condition: service_completed_successfully
 
   redirect-service:
     build:
-      context: .
-      dockerfile: src/redirect-service/Dockerfile
+      context: ./src/redirect-service
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
       DB_HOST: mysql
@@ -63,6 +90,7 @@ services:
       DB_NAME: ${DB_NAME:-shortlink}
       DB_APP_USER: ${DB_APP_USER:-shortlink_app}
       DB_APP_PASSWORD: ${DB_APP_PASSWORD}
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${DB_NAME:-shortlink}?serverTimezone=UTC&characterEncoding=UTF-8&useSSL=false&allowPublicKeyRetrieval=true
       DB_MIGRATOR_USER: ${DB_MIGRATOR_USER:-shortlink_migrator}
       DB_MIGRATOR_PASSWORD: ${DB_MIGRATOR_PASSWORD}
       REDIS_HOST: redis
@@ -82,6 +110,24 @@ services:
       mysql:
         condition: service_healthy
       redis:
+        condition: service_started
+      migration:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ./src/frontend
+    environment:
+      # 브라우저 요청(/api)은 Vite dev proxy를 거쳐 Compose 서비스명으로 전달한다.
+      VITE_API_PROXY_TARGET: http://management-service:8080
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+      # 프런트와 백엔드는 같은 Kakao 앱·Redirect URI를 반드시 사용한다.
+      VITE_KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID}
+      VITE_KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      management-service:
         condition: service_started
 
 volumes:

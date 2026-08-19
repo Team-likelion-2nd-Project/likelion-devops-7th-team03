@@ -8,3 +8,4 @@ patches:
   - path: patch-sa.yaml
   - path: patch-ingress.yaml
   - path: patch-replicas.yaml
+  - path: patch-athena-cronjob.yaml

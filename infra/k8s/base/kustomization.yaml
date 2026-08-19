@@ -8,6 +8,9 @@ resources:
 - redirect-service-service.yaml
 - redirect-service-sa.yaml
 - ingress-with-origin-verify.yaml
+- athena-batch-sa.yaml
+- athena-batch-cronjob.yaml
+- athena-batch-configmap.yaml
 images:
 - name: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/management-service
   newName: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/management-service

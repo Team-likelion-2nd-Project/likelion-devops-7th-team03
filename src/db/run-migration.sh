@@ -310,5 +310,6 @@ else
     echo "일부 실패:$FAILED"
     echo "  위 에러 메시지와 README.md의 '알려진 제약사항'을 확인하세요."
     echo "  이미 적용된 파일은 수정하지 말고 새 버전(V2, V3 ...)을 추가해야 합니다."
+    exit 1
 fi
 echo "02-stats-queries.sql은 조회/집계 쿼리 모음이라 실행하지 않았습니다."

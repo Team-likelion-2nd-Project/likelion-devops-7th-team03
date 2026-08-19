@@ -7,9 +7,10 @@ export default defineConfig({
     port: 3000,
     host: true,
     proxy: {
-      // management-service 기본 포트. .env로 바꾸려면 vite.config.js도 함께 고쳐야 함.
+      // 로컬은 localhost, Compose에서는 VITE_API_PROXY_TARGET으로 서비스명을 주입한다.
       '/api': {
-        target: 'http://localhost:8080',
+        // Compose 컨테이너에서는 localhost가 아니라 서비스명으로 접근해야 한다.
+        target: process.env.VITE_API_PROXY_TARGET || 'http://localhost:8080',
         changeOrigin: true,
       },
     },

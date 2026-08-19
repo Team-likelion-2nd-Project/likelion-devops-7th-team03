@@ -158,19 +158,14 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Dockerfile이 저장소 루트 기준 경로로 소스를 복사하므로,
-      # Docker 빌드 컨텍스트도 저장소 루트(.)로 지정한다.
-      # Dockerfile이 멀티스테이지라, 이 한 스텝 안에서
-      # (1) Stage 1: 소스 복사 + gradlew bootJar로 컴파일까지 다 하고
-      # (2) Stage 2: 그 결과 jar만 가져와 가벼운 실행 이미지로 포장한다.
-      # 즉 별도로 jar를 미리 만들어둘 필요가 없다.
+
       - name: 도커 이미지 빌드 및 ECR push
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           ECR_REPOSITORY: redirect-service
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -f src/redirect-service/Dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG src/redirect-service
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
@@ -185,11 +180,25 @@ jobs:
           ECR_REPOSITORY: redirect-service
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          kustomize edit set image $ECR_REGISTRY/$ECR_REPOSITORY=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add kustomization.yaml
-          git diff --cached --quiet && exit 0   # 변경 없으면 커밋 스킵 (동일 태그 재실행 등)
-          git commit -m "chore: redirect-service 이미지 태그 갱신 ($IMAGE_TAG)"
-          git push origin HEAD:${{ github.ref_name }}
+          for i in 1 2 3 4 5; do
+            git fetch origin ${{ github.ref_name }}
+            git reset --hard origin/${{ github.ref_name }}
+            kustomize edit set image $ECR_REGISTRY/$ECR_REPOSITORY=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+            git add kustomization.yaml
+            if git diff --cached --quiet; then
+              echo "변경 없음, 종료"
+              exit 0
+            fi
+            git commit -m "chore: redirect-service 이미지 태그 갱신 ($IMAGE_TAG)"
+            if git push origin HEAD:${{ github.ref_name }}; then
+              echo "push 성공"
+              exit 0
+            fi
+            echo "push 실패, 재시도 ($i/5)"
+            sleep $(( (RANDOM % 5) + 1 ))
+          done
+          echo "최대 재시도 횟수 초과"
+          exit 1
 

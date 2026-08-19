@@ -147,6 +147,8 @@ jobs:
     steps:
       - name: 코드 체크아웃
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.BOT_PUSH_TOKEN }}
 
       - name: AWS 자격증명 설정
         uses: aws-actions/configure-aws-credentials@v4

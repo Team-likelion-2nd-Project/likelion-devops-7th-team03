@@ -1,9 +1,10 @@
-output "kinesis_stream_name" {
-  value = aws_kinesis_stream.click_events.name
+output "firehose_delivery_stream_name" {
+  description = "redirect-service가 FIREHOSE_STREAM_NAME 환경변수로 사용"
+  value       = aws_kinesis_firehose_delivery_stream.click_events.name
 }
 
-output "kinesis_stream_arn" {
-  value = aws_kinesis_stream.click_events.arn
+output "firehose_delivery_stream_arn" {
+  value = aws_kinesis_firehose_delivery_stream.click_events.arn
 }
 
 output "click_logs_bucket" {

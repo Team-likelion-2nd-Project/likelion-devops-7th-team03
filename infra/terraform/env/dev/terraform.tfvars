@@ -6,7 +6,7 @@ single_nat_gateway = true # NAT Gateway 1개를 두 AZ가 공유
 
 node_instance_type = "t3.medium" # prod와 동일 타입, 개수만 줄임
 node_min_size      = 2
-node_max_size      = 2
+node_max_size      = 4 # kube-prometheus-stack 등 추가 부하 시 cluster-autoscaler가 2→4로 확장
 node_desired_size  = 2
 
 rds_multi_az = false # Single-AZ

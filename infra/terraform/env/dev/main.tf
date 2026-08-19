@@ -79,5 +79,57 @@ module "edge" {
 module "gitops" {
   source = "../../modules/gitops"
 
+  cluster_name      = var.cluster_name
+  aws_region        = var.aws_region
+  oidc_provider_arn = module.cluster.oidc_provider_arn
+  oidc_provider     = module.cluster.oidc_provider
+
   depends_on = [module.cluster]
+}
+
+module "app_secrets" {
+  source = "../../modules/app-secrets"
+
+  cluster_name = var.cluster_name
+}
+
+resource "kubernetes_config_map" "management_service_config" {
+  metadata {
+    name      = "management-service-config"
+    namespace = "default"
+  }
+
+  data = {
+    DB_HOST                            = split(":", module.database.rds_endpoint)[0]
+    DB_PORT                            = split(":", module.database.rds_endpoint)[1]
+    DB_NAME                            = module.database.rds_db_name
+    DB_APP_USER                        = "shortlink_app"
+    REDIS_HOST                         = module.database.elasticache_primary_endpoint
+    REDIS_PORT                         = "6379"
+    REDIRECT_CACHE_TTL                 = "10m"
+    KAKAO_REDIRECT_URI                 = "https://${var.domain_name}/auth/kakao/callback"
+    JWT_ACCESS_TOKEN_VALIDITY_SECONDS  = "1800"
+    JWT_REFRESH_TOKEN_VALIDITY_SECONDS = "1209600"
+    SHORT_URL_BASE_URL                 = "https://${var.domain_name}"
+  }
+
+  depends_on = [module.database]
+}
+
+resource "kubernetes_config_map" "redirect_service_config" {
+  metadata {
+    name      = "redirect-service-config"
+    namespace = "default"
+  }
+
+  data = {
+    DB_HOST     = split(":", module.database.rds_endpoint)[0]
+    DB_PORT     = split(":", module.database.rds_endpoint)[1]
+    DB_NAME     = module.database.rds_db_name
+    DB_APP_USER = "shortlink_app"
+    REDIS_HOST  = module.database.elasticache_primary_endpoint
+    REDIS_PORT  = "6379"
+  }
+
+  depends_on = [module.database]
 }

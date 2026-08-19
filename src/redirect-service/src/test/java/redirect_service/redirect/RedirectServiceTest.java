@@ -1,5 +1,6 @@
 package redirect_service.redirect;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import redirect_service.exception.RedirectNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -37,7 +38,7 @@ class RedirectServiceTest {
 
     @BeforeEach
     void setUp() {
-        redirectService = new RedirectService(linkRepository, redirectCache, eventPublisher);
+        redirectService = new RedirectService(linkRepository, redirectCache, eventPublisher, new SimpleMeterRegistry());
     }
 
     @Test

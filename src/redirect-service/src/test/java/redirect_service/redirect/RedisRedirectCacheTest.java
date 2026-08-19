@@ -1,5 +1,6 @@
 package redirect_service.redirect;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,7 +40,7 @@ class RedisRedirectCacheTest {
     void setUp() {
         RedirectProperties properties = new RedirectProperties();
         properties.setCacheTtl(Duration.ofMinutes(10));
-        redirectCache = new RedisRedirectCache(stringRedisTemplate, properties);
+        redirectCache = new RedisRedirectCache(stringRedisTemplate, properties, new SimpleMeterRegistry());
     }
 
     @Test

@@ -142,23 +142,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
-      contents: read
+      contents: write
 
     steps:
       - name: 코드 체크아웃
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.BOT_PUSH_TOKEN }}
 
-      - name: "[DEBUG] OIDC 토큰 클레임 확인"
-        run: |
-          JWT=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
-          PAYLOAD=$(echo "$JWT" | cut -d '.' -f2 | tr -- '-_' '+/')
-          case $(( ${#PAYLOAD} % 4 )) in
-            2) PAYLOAD="${PAYLOAD}==" ;;
-            3) PAYLOAD="${PAYLOAD}=" ;;
-          esac
-          echo "$PAYLOAD" | base64 -d | jq '{sub, aud, repository, ref, event_name}'
-          
       - name: AWS 자격증명 설정
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -184,3 +175,35 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: kustomize 설치
+        uses: imranismail/setup-kustomize@v2
+
+      - name: 이미지 태그 갱신 커밋 (ArgoCD가 이 커밋을 감지해서 배포)
+        working-directory: infra/k8s/base
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REPOSITORY: management-service
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          for i in 1 2 3 4 5; do
+            git fetch origin ${{ github.ref_name }}
+            git reset --hard origin/${{ github.ref_name }}
+            kustomize edit set image $ECR_REGISTRY/$ECR_REPOSITORY=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+            git add kustomization.yaml
+            if git diff --cached --quiet; then
+              echo "변경 없음, 종료"
+              exit 0
+            fi
+            git commit -m "chore: management-service 이미지 태그 갱신 ($IMAGE_TAG)"
+            if git push origin HEAD:${{ github.ref_name }}; then
+              echo "push 성공"
+              exit 0
+            fi
+            echo "push 실패, 재시도 ($i/5)"
+            sleep $(( (RANDOM % 5) + 1 ))
+          done
+          echo "최대 재시도 횟수 초과"
+          exit 1

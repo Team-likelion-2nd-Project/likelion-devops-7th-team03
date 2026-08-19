@@ -114,6 +114,16 @@ services:
       migration:
         condition: service_completed_successfully
 
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      redirect-service:
+        condition: service_started
+
   frontend:
     build:
       context: ./src/frontend

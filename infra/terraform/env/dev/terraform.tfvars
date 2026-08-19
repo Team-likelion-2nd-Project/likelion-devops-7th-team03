@@ -27,5 +27,10 @@ waf_geo_match_enabled = true
 waf_allowed_countries = ["KR"]
 
 # 1단계 apply: 비워둔 채로 적용 (ALB가 아직 없어서 CloudFront/ALB 조회 리소스는 스킵됨)
-# 2단계: k8s Ingress 배포 후 실제 ALB DNS 이름을 확인해 채우고 재적용 (prod와 동일한 절차)
-origin_alb_domain_name = "k8s-default-snipying-863e89ce38-1379313536.ap-southeast-1.elb.amazonaws.com"
+# 2단계: k8s Ingress 배포 후 실제 ALB 이름을 확인해 채우고 재적용 (prod와 동일한 절차)
+# ALB 의 DNS 값 넣으면 502 에러 남
+# 지금 설계상 alb_origin의 alias 타깃은 var.origin_alb_domain_name의 값을 참조하는 게 아님
+# elbv2.k8s.aws/cluster/ingress.k8s.aws/stack 태그로 매 apply마다 실제 살아있는 ALB를 다시 조회해서 채우고 있음
+# alb.dev.snipy.life 이름으로 조회해 갱신하고 있음
+# 값을 넣으면 갱신되지 않아서 문제 발생
+origin_alb_domain_name = "alb.dev.snipy.life"

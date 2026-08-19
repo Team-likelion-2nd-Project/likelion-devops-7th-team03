@@ -5,9 +5,9 @@ cluster_name = "snipy-dev-cluster"
 single_nat_gateway = true # NAT Gateway 1개를 두 AZ가 공유
 
 node_instance_type = "t3.medium" # prod와 동일 타입, 개수만 줄임
-node_min_size      = 1
+node_min_size      = 2
 node_max_size      = 2
-node_desired_size  = 1
+node_desired_size  = 2
 
 rds_multi_az = false # Single-AZ
 

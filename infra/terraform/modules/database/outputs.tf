@@ -11,6 +11,10 @@ output "rds_password_secret_arn" {
   value       = aws_secretsmanager_secret.rds_password.arn
 }
 
+output "rds_app_password_secret_arn" {
+  value = aws_secretsmanager_secret.rds_app_password.arn
+}
+
 output "rds_security_group_id" {
   value = aws_security_group.rds.id
 }

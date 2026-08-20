@@ -12,6 +12,11 @@ spec:
     helm:
       releaseName: kube-prometheus
       values: |
+        # prometheuses/alertmanagers CRD가 커서 ArgoCD sync 결과가 etcd 메시지 크기(2MB)를
+        # 넘어 상태 기록 자체가 실패함 (ResourceExhausted). CRD는 미리 별도로
+        # server-side apply 해두고, 여기서는 차트가 CRD를 다시 관리하지 않게 끈다.
+        crds:
+          enabled: false
         prometheus:
           prometheusSpec:
             serviceMonitorSelectorNilUsesHelmValues: false
@@ -36,14 +41,36 @@ spec:
               enabled: true
               searchNamespace: ALL
           resources:
-            requests: { cpu: 50m, memory: 128Mi }
-            limits: { cpu: 200m, memory: 256Mi }
+            requests: { cpu: 200m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
           persistence:
             enabled: true
             storageClassName: gp3
             size: 2Gi
         alertmanager:
           enabled: false
+        # grafana-admin-credentials 시크릿을 수동 kubectl create 없이 ESO로 자동 생성.
+        # aws_secretsmanager_secret.grafana_admin_password (modules/app-secrets)를 그대로 당겨온다.
+        extraManifests:
+          - apiVersion: external-secrets.io/v1
+            kind: ExternalSecret
+            metadata:
+              name: grafana-admin-credentials
+            spec:
+              secretStoreRef:
+                name: aws-secrets-manager
+                kind: ClusterSecretStore
+              target:
+                name: grafana-admin-credentials
+                template:
+                  mergePolicy: Merge # 기본값 Replace면 template.data가 통째로 덮어써서
+                    # data:로 따로 가져온 admin-password가 사라짐
+                  data:
+                    admin-user: admin
+              data:
+                - secretKey: admin-password
+                  remoteRef:
+                    key: snipy-dev-cluster/app/grafana-admin-password
         kubeControllerManager:
           enabled: false
         kubeScheduler:
@@ -59,3 +86,5 @@ spec:
       prune: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true # alertmanagers/prometheuses CRD가 커서 client-side apply 시
+        # last-applied-configuration 어노테이션이 262144바이트 제한을 넘어 동기화 실패함

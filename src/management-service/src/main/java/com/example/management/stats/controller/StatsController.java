@@ -60,7 +60,7 @@ public class StatsController {
         return statsService.getDailyChange(userId, linkId, target);
     }
 
-    /** 기타 분포 조회 (FR-004-5 디바이스·지역, REFERRER는 기존 getReferrerStats 사용) */
+    /** 기타 분포 조회 (FR-004-5 디바이스·지역) */
     @GetMapping("/{linkId}/stats/breakdown")
     public DimensionBreakdownResponse getBreakdown(
             @CurrentUser Long userId,

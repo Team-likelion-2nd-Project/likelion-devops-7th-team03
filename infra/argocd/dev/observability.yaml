@@ -63,6 +63,8 @@ spec:
               target:
                 name: grafana-admin-credentials
                 template:
+                  mergePolicy: Merge # 기본값 Replace면 template.data가 통째로 덮어써서
+                    # data:로 따로 가져온 admin-password가 사라짐
                   data:
                     admin-user: admin
               data:

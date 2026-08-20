@@ -18,9 +18,12 @@ spec:
             serviceMonitorNamespaceSelector: {}
             enableRemoteWriteReceiver: true
             retention: 3d
+            # 원래 100m/512Mi(limit 500m/1Gi)였는데 부하테스트 중 WAL replay가 44초+
+            # 걸리면서 startup probe 타임아웃에 걸려 계속 재시작하는 크래시루프가 남 —
+            # CPU 부족이 원인으로 보여 넉넉히 올림.
             resources:
-              requests: { cpu: 100m, memory: 512Mi }
-              limits: { cpu: 500m, memory: 1Gi }
+              requests: { cpu: 300m, memory: 1Gi }
+              limits: { cpu: 1500m, memory: 2Gi }
             storageSpec:
               volumeClaimTemplate:
                 spec:

@@ -1,20 +1,16 @@
-// "Warmup 없는 바이럴 링크" 시나리오.
-//
-// 가설: 캐시에 없는 링크가 갑자기 바이럴되면, 동시 캐시 미스가 몰려 MySQL/HikariCP
-// 커넥션 풀에 짧고 날카로운 병목이 생긴다. redirect-service의 캐시 미스 write-back
-// 경로(RedirectService.findDatabaseRedirectTarget)에는 동시성 보호가 전혀 없어서
-// (락/synchronized/분산락/요청 병합 없음) 이 herd가 그대로 DB까지 전달된다.
+// "Warmup 없는 바이럴 링크" 시나리오. 가설: 캐시 미스 herd가 MySQL/HikariCP에
+// 병목을 만든다 — RedirectService.findDatabaseRedirectTarget에 동시성 보호가
+// 없어서(락/synchronized/분산락 없음) 그대로 DB까지 전달됨.
 //
 // 사용법:
-//   BASE_URL=https://dev.snipy.life SLUGS=cold-test-1 k6 run load-test/viral-spike.js
+//   BASE_URL=http://redirect-service:8080 SLUGS=cold-test-1 k6 run load-test/viral-spike.js
 //
-// SLUGS는 콤마로 여러 개 넘길 수 있다 (herd 크기를 키우고 싶을 때). 반드시 테스트
-// 시작 전 Redis 캐시에 없는 상태여야 한다 — 이미 캐싱된 slug를 쓰면 herd가 재현되지 않는다.
-// 링크 자체는 links 테이블에 미리 등록돼 있어야 302를 받는다 (없으면 404 대상 테스트가 됨).
+// SLUGS는 콤마로 여러 개 가능(herd 확대용). 테스트 전 Redis에 없는 상태여야 herd가
+// 재현된다. BASE_URL 기본값이 내부 DNS인 이유는 load-test/README.md 참고(WAF 403).
 import http from "k6/http";
 import { check } from "k6";
 
-const BASE_URL = __ENV.BASE_URL || "https://dev.snipy.life";
+const BASE_URL = __ENV.BASE_URL || "http://redirect-service:8080";
 const SLUGS = (__ENV.SLUGS || __ENV.SLUG || "test").split(",").map((s) => s.trim());
 
 export const options = {
@@ -33,15 +29,16 @@ export const options = {
     },
   },
   thresholds: {
-    // 참고용 기본값 — 실제 판정 기준은 팀 논의 후 확정 필요 (load-test/SCENARIOS.md 참고)
-    http_req_failed: ["rate<0.05"],
-    http_req_duration: ["p(95)<1000"],
+    http_req_failed: ["rate<=0"],
+    http_req_duration: ["p(95)<150"],
   },
 };
 
 export default function () {
   const slug = SLUGS[Math.floor(Math.random() * SLUGS.length)];
-  const res = http.get(`${BASE_URL}/${slug}`, { redirects: 0 });
+  // tags.name 고정 — 안 주면 k6가 URL(슬러그별로 다름)을 라벨로 써서 Prometheus
+  // 시계열이 슬러그 개수만큼 폭발한다 (실제로 87만 개까지 간 적 있음).
+  const res = http.get(`${BASE_URL}/${slug}`, { redirects: 0, tags: { name: "redirect" } });
 
   check(res, {
     "status is 302 or 404": (r) => r.status === 302 || r.status === 404,

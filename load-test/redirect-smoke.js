@@ -18,7 +18,9 @@ export const options = {
 };
 
 export default function () {
-  const res = http.get(`${BASE_URL}/${SLUG}`, { redirects: 0 });
+  // tags.name 고정 — 안 주면 k6가 URL(슬러그별로 다 다름)을 그대로 메트릭 라벨로 써서
+  // Prometheus 시계열이 slug 개수만큼 폭발한다 (실제로 87만 개까지 간 적 있음).
+  const res = http.get(`${BASE_URL}/${SLUG}`, { redirects: 0, tags: { name: "redirect" } });
 
   check(res, {
     "status is 302 or 404": (r) => r.status === 302 || r.status === 404,

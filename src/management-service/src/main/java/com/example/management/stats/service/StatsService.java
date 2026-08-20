@@ -35,9 +35,10 @@ public class StatsService {
 
     public DailyStatsResponse getDailyStats(Long userId, String linkUuid, LocalDate from, LocalDate to) {
         Link link = resolveOwnedLink(userId, linkUuid);
+        LocalDate today = LocalDate.now(KST);
 
         List<DailyStat> daily = dailyStatRepository.findDailyFilled(link.getId(), from, to).stream()
-                .map(r -> new DailyStat(r.getStatDate(), r.getClickCount(), r.getVisitorCount()))
+                .map(r -> toDailyStat(r, link.getId(), today))
                 .toList();
 
         var s = dailyStatRepository.findSummary(link.getId(), from, to);
@@ -151,6 +152,20 @@ public class StatsService {
 
     private String uniqueVisitorsKey(LocalDate date, long linkId) {
         return UNIQUE_VISITORS_KEY_PATTERN.formatted(date, linkId);
+    }
+
+    /**
+     * 오늘 날짜는 Athena 배치가 아직 집계 전이라 findDailyFilled가 항상 0으로
+     * 채워서 돌려준다. 그래서 오늘 하루만 Redis 실시간 값으로 대체한다
+     * (getRealtimeStats()와 같은 Redis 키를 읽음).
+     */
+    private DailyStat toDailyStat(LinkDailyStatRepository.DailyStatRow row, long linkId, LocalDate today) {
+        if (!row.getStatDate().equals(today)) {
+            return new DailyStat(row.getStatDate(), row.getClickCount(), row.getVisitorCount());
+        }
+        String clicks = redisTemplate.opsForValue().get(clicksKey(today, linkId));
+        long uniqueVisitors = redisTemplate.opsForHyperLogLog().size(uniqueVisitorsKey(today, linkId));
+        return new DailyStat(today, clicks == null ? 0 : Integer.parseInt(clicks), (int) uniqueVisitors);
     }
 
     private Link resolveOwnedLink(Long userId, String linkUuid) {

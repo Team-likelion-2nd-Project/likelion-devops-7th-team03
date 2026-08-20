@@ -10,7 +10,6 @@ import { KakaoCallback } from './pages/KakaoCallback'
 import { Dashboard } from './pages/Dashboard'
 import { LinkStats } from './pages/LinkStats'
 import { StatsDashboard } from './pages/StatsDashboard'
-import { Architecture } from './pages/Architecture'
 import { RedirectHandler } from './pages/Redirect'
 
 export default function App() {
@@ -47,7 +46,6 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
-            <Route path="/architecture" element={<Architecture />} />
             {/* 짧은 코드 리다이렉트는 항상 마지막 - 실제 서비스에서도 라우팅 우선순위가 같다 */}
             <Route path="/:code" element={<RedirectHandler />} />
           </Routes>

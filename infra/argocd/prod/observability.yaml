@@ -54,6 +54,26 @@ spec:
                   accessModes: ["ReadWriteOnce"]
                   resources:
                     requests: { storage: 2Gi }
+        # grafana-admin-credentials 시크릿을 수동 kubectl create 없이 ESO로 자동 생성.
+        # aws_secretsmanager_secret.grafana_admin_password (modules/app-secrets)를 그대로 당겨온다.
+        extraManifests:
+          - apiVersion: external-secrets.io/v1
+            kind: ExternalSecret
+            metadata:
+              name: grafana-admin-credentials
+            spec:
+              secretStoreRef:
+                name: aws-secrets-manager
+                kind: ClusterSecretStore
+              target:
+                name: grafana-admin-credentials
+                template:
+                  data:
+                    admin-user: admin
+              data:
+                - secretKey: admin-password
+                  remoteRef:
+                    key: snipy-cluster/app/grafana-admin-password
         # EKS 관리형 컨트롤 플레인이라 노출되지 않는 컴포넌트 — 켜봤자 타겟이 영구 Down으로 남음
         kubeControllerManager:
           enabled: false

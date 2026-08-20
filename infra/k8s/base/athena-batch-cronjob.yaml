@@ -11,7 +11,8 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 2
-      activeDeadlineSeconds: 900  # 15분 넘으면 강제 종료 (Athena 폴링 무한 대기 방지)
+      activeDeadlineSeconds: 1800  # 30분 넘으면 강제 종료. 아테나 폴링 무한 대기 방지 쿼리 4개(daily+referrer+device+region)
+                                   # × 쿼리당 최대 폴링 5분(150회×2초) = 최악 20분 + 여유
       template:
         metadata:
           labels: { app: athena-batch }

@@ -73,6 +73,37 @@ resource "aws_iam_role_policy" "github_actions_ecr_push" {
   })
 }
 
+resource "aws_iam_role_policy" "github_actions_frontend_deploy" {
+  name = "snipy-github-actions-frontend-deploy"
+  role = aws_iam_role.github_actions_ci.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "S3FrontendSync"
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket",
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+        ]
+        Resource = [
+          "arn:aws:s3:::snipy-*-frontend-team03",
+          "arn:aws:s3:::snipy-*-frontend-team03/*",
+        ]
+      },
+      {
+        Sid      = "CloudFrontInvalidate"
+        Effect   = "Allow"
+        Action   = "cloudfront:CreateInvalidation"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 output "github_actions_role_arn" {
   value = aws_iam_role.github_actions_ci.arn
 }

@@ -1,5 +1,7 @@
 package redirect_service.clicklog.processor;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -33,7 +35,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class RealtimeStatsRecorder {
 
     static final ZoneId KST = ZoneId.of("Asia/Seoul");
-    // Redis key contract: stats:{KST date}:link:{internal linkId}:{clicks|uv}
+    // Redis 키 형식: stats:{KST 날짜}:link:{내부 linkId}:{clicks|uv}
     private static final String CLICKS_KEY_PATTERN = "stats:%s:link:%d:clicks";
     private static final String UNIQUE_VISITORS_KEY_PATTERN = "stats:%s:link:%d:uv";
 
@@ -50,11 +52,22 @@ public class RealtimeStatsRecorder {
     private final RealtimeStatsRecorderProperties properties;
     private final BlockingQueue<ClickEvent> pendingEvents;
     private final AtomicLong droppedEventCount = new AtomicLong();
+    private final Counter flushSuccessCounter;
+    private final Counter flushFailureCounter;
 
-    public RealtimeStatsRecorder(StringRedisTemplate redisTemplate, RealtimeStatsRecorderProperties properties) {
+    public RealtimeStatsRecorder(StringRedisTemplate redisTemplate, RealtimeStatsRecorderProperties properties,
+            MeterRegistry meterRegistry) {
         this.redisTemplate = redisTemplate;
         this.properties = properties;
         this.pendingEvents = new ArrayBlockingQueue<>(properties.getBufferCapacity());
+        this.flushSuccessCounter = Counter.builder("redirect_click_stats_flush_total")
+                .tag("result", "success")
+                .description("Realtime stats Redis pipeline flush outcomes")
+                .register(meterRegistry);
+        this.flushFailureCounter = Counter.builder("redirect_click_stats_flush_total")
+                .tag("result", "failure")
+                .description("Realtime stats Redis pipeline flush outcomes")
+                .register(meterRegistry);
     }
 
     @Async("realtimeStatsRecorderExecutor")
@@ -63,7 +76,7 @@ public class RealtimeStatsRecorder {
         if (!pendingEvents.offer(clickEvent)) {
             long dropped = droppedEventCount.incrementAndGet();
             if (dropped == 1 || dropped % 1_000 == 0) {
-                log.warn("Realtime Redis stats buffer is full; droppedEvents={}", dropped);
+                log.warn("실시간 통계 버퍼가 가득 차 클릭 이벤트가 드롭됐습니다. droppedEvents={}", dropped);
             }
         }
     }
@@ -95,9 +108,11 @@ public class RealtimeStatsRecorder {
                     return null;
                 }
             });
+            flushSuccessCounter.increment();
         } catch (RuntimeException exception) {
             // 파이프라인 실패 뒤 일부 명령 반영 여부는 알 수 없다. 재시도하면 클릭 수를 과대 계상한다.
-            log.warn("Realtime Redis stats batch was dropped. batchSize={}", batch.size(), exception);
+            flushFailureCounter.increment();
+            log.warn("실시간 통계 Redis 배치 반영에 실패해 드롭됐습니다. batchSize={}", batch.size(), exception);
         }
     }
 

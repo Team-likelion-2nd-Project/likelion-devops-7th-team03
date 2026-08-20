@@ -179,6 +179,10 @@ resource "aws_wafv2_web_acl" "cloudfront" {
     sampled_requests_enabled   = true
   }
 
+  lifecycle {
+    ignore_changes = [rule]
+  }
+
   tags = {
     Name = "${var.cluster_name}-waf"
   }

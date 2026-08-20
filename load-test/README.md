@@ -5,14 +5,13 @@ EKS 클러스터 안에서 k6로 부하테스트를 1회성으로 실행하기 �
 ## 사전 준비
 
 1. `infra/argocd/{dev,prod}/observability.yaml`이 배포되어 `monitoring` 네임스페이스에 kube-prometheus-stack(Prometheus/Grafana)이 떠 있어야 함.
-2. Grafana admin 비밀번호는 git에 안 올라가므로, 클러스터별로 미리 시크릿 생성 필요:
+2. Grafana admin 비밀번호는 수동으로 만들 필요 없음 — `modules/app-secrets`가 Secrets Manager에 랜덤 비밀번호를 생성해두고, observability Application의 `extraManifests`에 포함된 `ExternalSecret`이 배포 시 자동으로 `grafana-admin-credentials` 시크릿을 만든다. 비밀번호 값을 보려면:
    ```bash
-   kubectl --context <context> create secret generic grafana-admin-credentials \
-     -n monitoring \
-     --from-literal=admin-user=admin \
-     --from-literal=admin-password='<원하는 비밀번호>'
+   aws secretsmanager get-secret-value \
+     --secret-id snipy-dev-cluster/app/grafana-admin-password \
+     --query SecretString --output text
+   # prod는 snipy-cluster/app/grafana-admin-password
    ```
-   (observability Application 최초 sync 전에 만들어둘 것 — 없으면 Grafana Pod가 뜨지 않음)
 3. `envsubst` 필요 (macOS: `brew install gettext`).
 
 ## 실행
@@ -35,7 +34,7 @@ k6가 `--out experimental-prometheus-rw`로 결과를 클러스터 내 Prometheu
 
 ```bash
 kubectl --context <context> port-forward -n monitoring svc/kube-prometheus-grafana 3000:80
-# http://localhost:3000, admin / (위에서 만든 admin-password)
+# http://localhost:3000, admin / (사전 준비 2번에서 조회한 비밀번호)
 ```
 
 ## 정리

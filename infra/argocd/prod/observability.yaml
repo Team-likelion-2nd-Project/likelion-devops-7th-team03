@@ -90,3 +90,5 @@ spec:
       prune: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true # alertmanagers/prometheuses CRD가 커서 client-side apply 시
+        # last-applied-configuration 어노테이션이 262144바이트 제한을 넘어 동기화 실패함

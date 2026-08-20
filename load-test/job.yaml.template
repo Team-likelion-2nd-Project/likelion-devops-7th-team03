@@ -23,12 +23,23 @@ spec:
               value: "${SLUG}"
             - name: SLUGS
               value: "${SLUG}"
+            - name: SLUG_PREFIX
+              value: "${SLUG_PREFIX}"
+            - name: SLUG_COUNT
+              value: "${SLUG_COUNT}"
+            - name: PEAK_TPS
+              value: "${PEAK_TPS}"
             - name: VUS
               value: "${VUS}"
             - name: DURATION
               value: "${DURATION}"
             - name: K6_PROMETHEUS_RW_SERVER_URL
               value: "http://kube-prometheus-kube-prome-prometheus.monitoring.svc:9090/api/v1/write"
+          resources:
+            # 리소스 상한 없이 두면 고TPS 테스트 중 k6 자체가 노드 메모리를 과점해서
+            # 같은 노드의 다른 파드(Grafana 등)가 밀려날 수 있어 명시적으로 제한한다.
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { cpu: 1000m, memory: 1Gi }
           volumeMounts:
             - name: script
               mountPath: /scripts

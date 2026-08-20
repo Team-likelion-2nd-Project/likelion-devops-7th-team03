@@ -1,24 +1,26 @@
 #!/usr/bin/env bash
-# k6 부하테스트를 EKS 클러스터 안에서 1회 실행한다 (CronJob 아님, 필요할 때 수동 실행).
+# k6 스크립트를 EKS 클러스터 안에서 1회 실행하는 공용 러너 (CronJob 아님).
+# viral-spike-run.sh/normal-traffic-run.sh가 내부적으로 이걸 호출한다.
 #
 # 사용법:
-#   load-test/run.sh <kubectl-context> <script-file> <base-url> <slug> [vus] [duration]
+#   load-test/run-smoke.sh <kubectl-context> <script-file> <base-url> [slug] [vus] [duration]
 #
 # 예시:
-#   load-test/run.sh snipy redirect-smoke.js https://dev.snipy.life test 10 30s
-#   load-test/run.sh snipy viral-spike.js https://dev.snipy.life cold-test-1,cold-test-2
+#   load-test/run-smoke.sh snipy redirect-smoke.js https://dev.snipy.life test 10 30s
 #
-# SLUG(들)은 실제로 links 테이블에 등록된 slug여야 302를 받는다 (없으면 404 대상 테스트가 됨).
-# viral-spike.js는 콤마로 여러 slug를 받고, 반드시 테스트 전 캐시에 없는 상태여야 herd가 재현된다.
-# vus/duration은 redirect-smoke.js 전용 (viral-spike.js는 스크립트 안에 부하 프로파일이 고정돼 있어 무시됨).
+# vus/duration은 redirect-smoke.js 전용. SLUG_PREFIX/SLUG_COUNT/PEAK_TPS는 호출 전에
+# export해두면 그대로 Job에 전달됨 (normal-traffic-run.sh 참고).
 set -euo pipefail
 
-CONTEXT="${1:?사용법: run.sh <kubectl-context> <script-file> <base-url> <slug> [vus] [duration]}"
+CONTEXT="${1:?사용법: run-smoke.sh <kubectl-context> <script-file> <base-url> [slug] [vus] [duration]}"
 SCRIPT_FILE="${2:?스크립트 파일명 지정 (예: redirect-smoke.js, viral-spike.js)}"
 BASE_URL="${3:?base-url 지정 (예: https://dev.snipy.life)}"
-SLUG="${4:?테스트용 slug 지정 (콤마로 여러 개 가능)}"
+SLUG="${4:-}"
 VUS="${5:-10}"
 DURATION="${6:-30s}"
+SLUG_PREFIX="${SLUG_PREFIX:-}"
+SLUG_COUNT="${SLUG_COUNT:-0}"
+PEAK_TPS="${PEAK_TPS:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -37,10 +39,11 @@ kubectl --context "$CONTEXT" create configmap k6-load-test-script \
 
 echo ">> [$CONTEXT] Job 생성 (SCRIPT=$SCRIPT_FILE BASE_URL=$BASE_URL SLUG=$SLUG VUS=$VUS DURATION=$DURATION)"
 SCRIPT_FILE="$SCRIPT_FILE" BASE_URL="$BASE_URL" SLUG="$SLUG" VUS="$VUS" DURATION="$DURATION" \
+  SLUG_PREFIX="$SLUG_PREFIX" SLUG_COUNT="$SLUG_COUNT" PEAK_TPS="$PEAK_TPS" \
   envsubst < "$SCRIPT_DIR/job.yaml.template" | kubectl --context "$CONTEXT" apply -f -
 
-echo ">> Job 완료 대기 (최대 8분)"
-kubectl --context "$CONTEXT" wait --for=condition=complete --timeout=8m job/k6-load-test || true
+echo ">> Job 완료 대기 (최대 25분)"
+kubectl --context "$CONTEXT" wait --for=condition=complete --timeout=25m job/k6-load-test || true
 
 echo ">> 결과 로그"
 kubectl --context "$CONTEXT" logs job/k6-load-test

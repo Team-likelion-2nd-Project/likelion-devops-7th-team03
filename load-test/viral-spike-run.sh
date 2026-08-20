@@ -2,26 +2,25 @@
 # "Warmup 없는 바이럴 링크" 시나리오 원스톱 실행: 콜드 링크 DB 직접 INSERT →
 # viral-spike.js 실행 → 테스트 데이터 DELETE. load-test/SCENARIOS.md 참고.
 #
-# management-service API를 쓰지 않는 이유:
-#   - API로 만들면 링크 생성 트랜잭션 커밋 직후 바로 Redis에 캐시가 써져서
-#     (RedirectCacheRefreshEventListener, AFTER_COMMIT) 처음부터 웜 상태가 됨
-#   - slug도 서버가 SecureRandom으로 자동 생성해서 원하는 값을 못 정함
-#   - API 호출 자체에 카카오 OAuth 로그인이 필요해서 스크립트로 돌리기 번거로움
-# 그래서 MySQL에 직접 INSERT한다 (캐시 이벤트 안 탐, slug 마음대로, 로그인 불필요).
+# management-service API 대신 MySQL에 직접 INSERT하는 이유: API로 만들면 생성 즉시
+# 캐시가 채워지고(RedirectCacheRefreshEventListener), slug도 자동생성이라 지정 불가,
+# 카카오 로그인도 필요해서 자동화하기 번거로움.
 #
 # 사용법:
-#   load-test/viral-spike-run.sh <kubectl-context> <base-url> [num-slugs]
+#   load-test/viral-spike-run.sh <kubectl-context> [base-url] [num-slugs]
 #
 # 예시:
-#   load-test/viral-spike-run.sh snipy https://dev.snipy.life 3
+#   load-test/viral-spike-run.sh snipy                    # 기본값: 내부 Service DNS
+#   load-test/viral-spike-run.sh snipy http://redirect-service:8080 3
 #
-# 전제:
-#   - kubectl context가 이미 MFA 인증된 상태여야 함 (aws eks get-token 호출)
-#   - aws secretsmanager 읽기 권한
+# base-url 기본값이 공개 도메인이 아니라 내부 DNS인 이유는 load-test/README.md 참고
+# (WAF geo-match 때문에 클러스터 안에서 공개 도메인 치면 403).
+#
+# 전제: kubectl context가 MFA 인증된 상태, aws secretsmanager 읽기 권한.
 set -euo pipefail
 
-CONTEXT="${1:?사용법: viral-spike-run.sh <kubectl-context> <base-url> [num-slugs]}"
-BASE_URL="${2:?base-url 지정 (예: https://dev.snipy.life)}"
+CONTEXT="${1:?사용법: viral-spike-run.sh <kubectl-context> [base-url] [num-slugs]}"
+BASE_URL="${2:-http://redirect-service:8080}"
 NUM_SLUGS="${3:-3}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,21 +37,42 @@ DB_HOST=$(kubectl --context "$CONTEXT" get configmap redirect-service-config -o 
 DB_PORT=$(kubectl --context "$CONTEXT" get configmap redirect-service-config -o jsonpath='{.data.DB_PORT}')
 DB_NAME=$(kubectl --context "$CONTEXT" get configmap redirect-service-config -o jsonpath='{.data.DB_NAME}')
 DB_PASSWORD=$(aws secretsmanager get-secret-value \
+  --region ap-southeast-1 \
   --secret-id "${CLUSTER_NAME}/rds/app-user-password" \
   --query SecretString --output text)
 
-# kubectl run으로 클러스터 안에서만 mysql 클라이언트 파드를 띄워 1회성 SQL 실행.
-# -N(컬럼명 생략) -B(탭 구분 배치 출력)로 파싱하기 쉬운 순수 출력만 받는다.
+# kubectl run으로 mysql 클라이언트 파드를 띄워 1회성 SQL 실행 (-N -B로 순수 출력만).
+# --rm -i(attach)는 실패 시 로그가 중복 캡처되는 문제가 있어서, 파드 생성 후 종료
+# 상태(phase)를 폴링하고 kubectl logs로 한 번만 읽는 방식을 쓴다.
 run_sql() {
   local sql="$1"
-  kubectl --context "$CONTEXT" run "mysql-client-$$" --rm -i --restart=Never \
-    --image=mysql:8 --quiet \
+  local pod_name="mysql-client-$$-${RANDOM}"
+
+  kubectl --context "$CONTEXT" run "$pod_name" --restart=Never --image=mysql:8 --quiet \
     --env="MYSQL_PWD=${DB_PASSWORD}" \
-    --command -- mysql -N -B -h "$DB_HOST" -P "$DB_PORT" -u shortlink_app "$DB_NAME" -e "$sql"
+    --command -- mysql -N -B -h "$DB_HOST" -P "$DB_PORT" -u shortlink_app "$DB_NAME" -e "$sql" \
+    >/dev/null
+
+  local phase=""
+  for _ in $(seq 1 60); do
+    phase=$(kubectl --context "$CONTEXT" get pod "$pod_name" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+    [[ "$phase" == "Succeeded" || "$phase" == "Failed" ]] && break
+    sleep 1
+  done
+
+  local output
+  output=$(kubectl --context "$CONTEXT" logs "$pod_name" 2>&1)
+  kubectl --context "$CONTEXT" delete pod "$pod_name" --ignore-not-found >/dev/null 2>&1
+
+  if [[ "$phase" != "Succeeded" ]]; then
+    echo "$output" >&2
+    return 1
+  fi
+  echo "$output"
 }
 
 echo ">> [$CONTEXT] 기존 user id 조회"
-USER_ID=$(run_sql "SELECT id FROM users ORDER BY id LIMIT 1;" | tr -d '\r')
+USER_ID=$(run_sql "SELECT id FROM users ORDER BY id LIMIT 1;" | tr -d '\r' | head -n1)
 if [[ -z "$USER_ID" ]]; then
   echo "users 테이블이 비어있음 — 카카오 로그인을 한 번이라도 한 계정이 있어야 함" >&2
   exit 1
@@ -60,9 +80,11 @@ fi
 echo "   user_id=$USER_ID"
 
 TS=$(date +%s)
+# slug는 VARCHAR(20) 제약 — 길면 RDS가 조용히 잘라서 UNIQUE 충돌 남(실제로 겪음).
+# "vs" + epoch 뒤 8자리 + index로 짧게 유지.
 SLUGS=()
 for i in $(seq 1 "$NUM_SLUGS"); do
-  SLUGS+=("viraltest-${TS}-${i}")
+  SLUGS+=("vs${TS: -8}${i}")
 done
 SLUG_CSV=$(IFS=,; echo "${SLUGS[*]}")
 
@@ -87,4 +109,4 @@ cleanup() {
 trap cleanup EXIT
 
 echo ">> [$CONTEXT] k6 viral-spike 실행"
-"$SCRIPT_DIR/run.sh" "$CONTEXT" viral-spike.js "$BASE_URL" "$SLUG_CSV"
+"$SCRIPT_DIR/run-smoke.sh" "$CONTEXT" viral-spike.js "$BASE_URL" "$SLUG_CSV"

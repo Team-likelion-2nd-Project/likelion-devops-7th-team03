@@ -1,8 +1,15 @@
 // Load/Stress 겸용 스크립트 — PEAK_TPS 하나만 바꿔서 두 시나리오에 재사용한다
 // (예: Load는 PEAK_TPS=23, Stress는 PEAK_TPS=230). 0 → PEAK_TPS로 5분 상승 →
 // 10분 유지 → 5분 하강, 총 20분. 링크는 풀 하나(1..SLUG_COUNT)만 생성하고 그 안에서
-// 앞쪽 20%(HOT_RATIO)를 인기 링크 구간으로 취급, 요청의 80%(HOT_TRAFFIC_RATIO)를
-// 그 구간에 몰아준다 — 별도 풀을 안 만들어도 되니 INSERT/계산이 단순하다.
+// 앞쪽 HOT_COUNT개(절대 개수, 비율 아님)를 인기 링크로 취급, 요청의 80%(HOT_TRAFFIC_RATIO)를
+// 그 구간에 몰아준다.
+//
+// HOT_COUNT를 비율(예: 전체의 20%)로 잡으면 안 되는 이유: 30만 개의 20%면 6만 개인데,
+// 80% 트래픽으로 6만 개를 웜업시키는 데만 coupon collector 근사로 10분 넘게 걸려서
+// 테스트 대부분을 "hot도 사실상 다 콜드"인 채로 보내며 DB 부하가 계속 심하게 유지되는
+// 문제가 실제로 있었다. HOT_COUNT를 몇십 개 수준의 절대값으로 작게 잡으면 초반
+// 몇십 초 안에 다 캐싱되고, 이후 내내 "hot은 거의 히트, cold는 거의 미스"가 유지된다
+// (현실에서도 진짜 인기 링크는 전체의 몇 %가 아니라 훨씬 소수인 게 더 사실적이기도 함).
 //
 // User-Agent/Referer/visitor_id를 실제처럼 보내서 UA 파싱(yauaa)/referrer 분류/visitor
 // 식별이 정확한지 나중에 Athena로 검증한다. VU마다 조합을 고정 배정해 같은 방문자는
@@ -23,12 +30,11 @@ const SLUG_PREFIX = __ENV.SLUG_PREFIX || "test";
 const SLUG_COUNT = Number(__ENV.SLUG_COUNT || 300000);
 const PEAK_TPS = Number(__ENV.PEAK_TPS || 230);
 
-// 링크는 하나의 풀(1..SLUG_COUNT)로 생성하고, 그 안에서 앞쪽 HOT_RATIO만큼을
-// 인기 링크 구간으로 취급한다 (별도 풀 생성 없이 구간만 나눔). 80/20 원칙:
-// 요청의 HOT_TRAFFIC_RATIO(80%)는 핫 구간에서, 나머지는 콜드 구간에서 균등 랜덤.
-const HOT_RATIO = Number(__ENV.HOT_RATIO || 0.2);
+// 링크는 하나의 풀(1..SLUG_COUNT)로 생성하고, 그 안에서 앞쪽 HOT_COUNT개(절대값,
+// 비율 아님 — 위 주석 참고)를 인기 링크 구간으로 취급한다. 80/20 원칙: 요청의
+// HOT_TRAFFIC_RATIO(80%)는 핫 구간에서, 나머지는 콜드 구간에서 균등 랜덤.
+const HOT_COUNT = Math.min(SLUG_COUNT, Number(__ENV.HOT_COUNT || 50));
 const HOT_TRAFFIC_RATIO = Number(__ENV.HOT_TRAFFIC_RATIO || 0.8);
-const HOT_COUNT = Math.max(1, Math.floor(SLUG_COUNT * HOT_RATIO));
 
 // device_type(yauaa DeviceClass)별로 하나씩 — DESKTOP/MOBILE/TABLET 커버.
 const UA_PROFILES = [

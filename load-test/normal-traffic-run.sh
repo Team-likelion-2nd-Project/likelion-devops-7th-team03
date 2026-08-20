@@ -4,7 +4,7 @@
 # management-service API 대신 직접 INSERT하는 이유는 viral-spike-run.sh 헤더 참고.
 #
 # 링크 풀 하나(기본 30만 개 — SCENARIOS.md의 동시 활성 링크 추정치와 동일)를 만들고
-# normal-traffic.js가 그 안에서 hot/cold 구간을 나눈다(HOT_RATIO/HOT_TRAFFIC_RATIO).
+# normal-traffic.js가 그 안에서 hot/cold 구간을 나눈다(HOT_COUNT/HOT_TRAFFIC_RATIO).
 # 풀을 bash로 나열하면 너무 커지므로 MySQL 재귀 CTE로 서버 사이드에서 한 번에
 # 생성하고, 정리(DELETE)도 slug LIKE 패턴 하나로 끝낸다.
 #

@@ -24,3 +24,18 @@ resource "aws_secretsmanager_secret" "kakao_client_secret" {
   name                    = "${var.cluster_name}/app/kakao-client-secret"
   recovery_window_in_days = 0
 }
+
+resource "random_password" "grafana_admin" {
+  length  = 24
+  special = false
+}
+
+resource "aws_secretsmanager_secret" "grafana_admin_password" {
+  name                    = "${var.cluster_name}/app/grafana-admin-password"
+  recovery_window_in_days = 0
+}
+
+resource "aws_secretsmanager_secret_version" "grafana_admin_password" {
+  secret_id     = aws_secretsmanager_secret.grafana_admin_password.id
+  secret_string = random_password.grafana_admin.result
+}

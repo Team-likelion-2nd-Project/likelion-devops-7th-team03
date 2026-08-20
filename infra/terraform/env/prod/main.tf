@@ -138,6 +138,8 @@ resource "kubernetes_config_map" "redirect_service_config" {
     DB_APP_USER = "shortlink_app"
     REDIS_HOST  = module.database.elasticache_primary_endpoint
     REDIS_PORT  = "6379"
+    FIREHOSE_STREAM_NAME = module.streaming.firehose_delivery_stream_name
+    AWS_REGION           = var.aws_region
   }
 
   depends_on = [module.database]

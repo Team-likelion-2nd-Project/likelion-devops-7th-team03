@@ -134,6 +134,61 @@ class StatsServiceTest {
         }
     }
 
+    @Nested
+    class DailyStats {
+
+        @Test
+        void 오늘_날짜는_배치_대신_Redis_실시간_값으로_대체한다() {
+            mockOwnedLink();
+            LocalDate yesterday = LocalDate.now(KST).minusDays(1);
+            LocalDate today = LocalDate.now(KST);
+
+            when(dailyStatRepository.findDailyFilled(INTERNAL_LINK_ID, yesterday, today))
+                    .thenReturn(List.of(
+                            dailyStatRow(yesterday, 10, 5),
+                            dailyStatRow(today, 0, 0) // findDailyFilled는 배치 전이라 오늘을 항상 0으로 채워 준다
+                    ));
+            when(dailyStatRepository.findSummary(INTERNAL_LINK_ID, yesterday, today))
+                    .thenReturn(summaryRow(10L, 5L, 10.0, 10, 1L));
+
+            String todayClicksKey = "stats:%s:link:%d:clicks".formatted(today, INTERNAL_LINK_ID);
+            String todayUvKey = "stats:%s:link:%d:uv".formatted(today, INTERNAL_LINK_ID);
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.get(todayClicksKey)).thenReturn("7");
+            when(redisTemplate.opsForHyperLogLog()).thenReturn(hyperLogLogOperations);
+            when(hyperLogLogOperations.size(todayUvKey)).thenReturn(3L);
+
+            var response = statsService.getDailyStats(TEST_USER_ID, LINK_UUID, yesterday, today);
+
+            assertThat(response.daily()).hasSize(2);
+            assertThat(response.daily().get(0).clickCount()).isEqualTo(10); // 어제는 배치 값 그대로
+            assertThat(response.daily().get(1).date()).isEqualTo(today);
+            assertThat(response.daily().get(1).clickCount()).isEqualTo(7); // 오늘은 Redis 값으로 대체됨
+            assertThat(response.daily().get(1).visitorCount()).isEqualTo(3);
+        }
+
+        @Test
+        void 오늘_Redis에_값이_없으면_0이다() {
+            mockOwnedLink();
+            LocalDate today = LocalDate.now(KST);
+            String todayClicksKey = "stats:%s:link:%d:clicks".formatted(today, INTERNAL_LINK_ID);
+            String todayUvKey = "stats:%s:link:%d:uv".formatted(today, INTERNAL_LINK_ID);
+
+            when(dailyStatRepository.findDailyFilled(INTERNAL_LINK_ID, today, today))
+                    .thenReturn(List.of(dailyStatRow(today, 0, 0)));
+            when(dailyStatRepository.findSummary(INTERNAL_LINK_ID, today, today))
+                    .thenReturn(summaryRow(0L, 0L, 0.0, 0, 0L));
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.get(todayClicksKey)).thenReturn(null); // 해당 키에 값이 없는 상황을 명시적으로 재현
+            when(redisTemplate.opsForHyperLogLog()).thenReturn(hyperLogLogOperations);
+            when(hyperLogLogOperations.size(todayUvKey)).thenReturn(0L);
+
+            var response = statsService.getDailyStats(TEST_USER_ID, LINK_UUID, today, today);
+
+            assertThat(response.daily().get(0).clickCount()).isZero();
+        }
+    }
+
     private LinkDailyStat stat(LocalDate date, int clicks, int visitors) {
         return LinkDailyStat.builder()
                 .linkId(INTERNAL_LINK_ID)
@@ -141,6 +196,55 @@ class StatsServiceTest {
                 .clickCount(clicks)
                 .visitorCount(visitors)
                 .build();
+    }
+
+    private LinkDailyStatRepository.DailyStatRow dailyStatRow(LocalDate date, int clicks, int visitors) {
+        return new LinkDailyStatRepository.DailyStatRow() {
+            @Override
+            public LocalDate getStatDate() {
+                return date;
+            }
+
+            @Override
+            public Integer getClickCount() {
+                return clicks;
+            }
+
+            @Override
+            public Integer getVisitorCount() {
+                return visitors;
+            }
+        };
+    }
+
+    private LinkDailyStatRepository.DailyStatSummaryRow summaryRow(
+            Long totalClicks, Long sumOfDailyVisitors, Double avgDailyClicks, Integer peakClicks, Long activeDays) {
+        return new LinkDailyStatRepository.DailyStatSummaryRow() {
+            @Override
+            public Long getTotalClicks() {
+                return totalClicks;
+            }
+
+            @Override
+            public Long getSumOfDailyVisitors() {
+                return sumOfDailyVisitors;
+            }
+
+            @Override
+            public Double getAvgDailyClicks() {
+                return avgDailyClicks;
+            }
+
+            @Override
+            public Integer getPeakClicks() {
+                return peakClicks;
+            }
+
+            @Override
+            public Long getActiveDays() {
+                return activeDays;
+            }
+        };
     }
 
     private LinkDailyDimensionStatRepository.BreakdownRow breakdownRow(String value, Long clicks) {

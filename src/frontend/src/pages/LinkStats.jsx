@@ -40,6 +40,7 @@ export function LinkStats() {
   const [regionBreakdown, setRegionBreakdown] = useState(null)
   const [realtime, setRealtime] = useState(null)
   const [realtimeVisitors, setRealtimeVisitors] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   // ponytail: 링크 단건 조회 API가 없어 목록에서 찾는다. 사용자당 링크가 100개를 넘으면 못 찾을 수 있음 — 그때 GET /api/links/{id} 추가.
   useEffect(() => {
@@ -75,6 +76,15 @@ export function LinkStats() {
   useEffect(() => {
     loadStats()
   }, [loadStats])
+
+  async function handleRefresh() {
+    setRefreshing(true)
+    try {
+      await loadStats()
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -114,9 +124,14 @@ export function LinkStats() {
             {link.originalUrl}
           </p>
         </div>
-        <Link to="/dashboard" className="btn btn--ghost">
-          ← 내 링크
-        </Link>
+        <div className="page__header-actions">
+          <button className="btn btn--ghost" onClick={handleRefresh} disabled={refreshing}>
+            {refreshing ? '새로고침 중...' : '새로고침'}
+          </button>
+          <Link to="/dashboard" className="btn btn--ghost">
+            ← 내 링크
+          </Link>
+        </div>
       </div>
 
       <div className="stat-tiles">

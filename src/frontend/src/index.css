@@ -164,6 +164,12 @@ a:hover {
 .page__header h1 {
   margin: 0 0 4px;
 }
+.page__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 
 h1 {
   font-size: 1.6rem;

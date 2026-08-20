@@ -12,6 +12,11 @@ spec:
     helm:
       releaseName: kube-prometheus
       values: |
+        # prometheuses/alertmanagers CRD가 커서 ArgoCD sync 결과가 etcd 메시지 크기(2MB)를
+        # 넘어 상태 기록 자체가 실패함 (ResourceExhausted). CRD는 미리 별도로
+        # server-side apply 해두고, 여기서는 차트가 CRD를 다시 관리하지 않게 끈다.
+        crds:
+          enabled: false
         prometheus:
           prometheusSpec:
             serviceMonitorSelectorNilUsesHelmValues: false

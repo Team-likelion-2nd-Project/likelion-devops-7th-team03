@@ -12,9 +12,6 @@ spec:
     helm:
       releaseName: kube-prometheus
       values: |
-        # kube-state-metrics/node-exporter까지 다 켜져 있어서 Prometheus가 필요로 하는
-        # 최소 메모리는 realistic하게 잡는다 (256Mi는 OOMKill 남). 부족하면
-        # node_max_size를 2→4로 올려둔 cluster-autoscaler가 노드를 추가한다.
         prometheus:
           prometheusSpec:
             serviceMonitorSelectorNilUsesHelmValues: false
@@ -22,7 +19,7 @@ spec:
             enableRemoteWriteReceiver: true
             retention: 3d
             resources:
-              requests: { cpu: 200m, memory: 512Mi }
+              requests: { cpu: 100m, memory: 512Mi }
               limits: { cpu: 500m, memory: 1Gi }
             storageSpec:
               volumeClaimTemplate:
@@ -47,7 +44,6 @@ spec:
             size: 2Gi
         alertmanager:
           enabled: false
-        # EKS 관리형 컨트롤 플레인이라 노출되지 않는 컴포넌트 — 켜봤자 타겟이 영구 Down으로 남음
         kubeControllerManager:
           enabled: false
         kubeScheduler:

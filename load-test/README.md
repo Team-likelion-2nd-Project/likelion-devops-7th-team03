@@ -17,16 +17,16 @@ EKS 클러스터 안에서 k6로 부하테스트를 1회성으로 실행하기 �
 ## 실행
 
 ```bash
-load-test/run.sh <kubectl-context> <base-url> <slug> [vus] [duration]
+load-test/run.sh <kubectl-context> <script-file> <base-url> <slug> [vus] [duration]
 
-# 예: dev에서 낮은 강도로 먼저 확인
-load-test/run.sh snipy https://dev.snipy.life test 10 30s
+# 간단한 smoke test (vus/duration 기반) — slug는 management-service API로 미리 만들어둔 값
+load-test/run.sh snipy redirect-smoke.js https://dev.snipy.life test 10 30s
 
-# prod 본 테스트
-load-test/run.sh snipy-prod https://snipy.life test 50 2m
+# 바이럴 스파이크 시나리오 — 콜드 링크 생성부터 실행/정리까지 원스톱
+load-test/viral-spike-run.sh snipy https://dev.snipy.life 3
 ```
 
-`slug`는 실제로 links 테이블에 등록된 값이어야 302를 받는다. 부하테스트 전용 링크를 management-service API로 미리 만들어두고, 나중에 정리하기 쉽게 식별 가능한 slug(예: `loadtest-xxx`)를 쓰는 걸 권장.
+`redirect-smoke.js`용 `slug`는 실제로 links 테이블에 등록된 값이어야 302를 받는다. `viral-spike.js`는 **콜드(캐시에 없는) 링크**가 필요한데, management-service API로는 만들 수 없다 — API로 만들면 생성 즉시 Redis에 캐시가 채워지고, slug도 서버가 자동 생성해서 지정이 안 되기 때문. 그래서 `viral-spike-run.sh`가 MySQL에 직접 INSERT해서 콜드 링크를 만들고, 테스트 후 자동으로 정리한다 (자세한 내용은 `SCENARIOS.md` 참고).
 
 ## 결과 확인
 
@@ -43,4 +43,4 @@ kubectl --context <context> port-forward -n monitoring svc/kube-prometheus-grafa
   ```bash
   kubectl --context <context> delete job k6-load-test configmap k6-load-test-script
   ```
-- 테스트로 생성된 더미 데이터(링크, 클릭 로그 → `link_daily_stats`, S3/Athena)는 자동 정리되지 않음. slug 프리픽스로 식별해서 수동으로 정리할 것.
+- `viral-spike-run.sh`로 만든 콜드 링크는 테스트 종료 시 자동 DELETE됨 (`trap cleanup EXIT` — 중간에 실패해도 실행됨). 클릭 로그(`link_daily_stats`, S3/Athena)는 자동 정리되지 않음.

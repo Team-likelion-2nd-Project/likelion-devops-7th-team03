@@ -15,11 +15,13 @@ spec:
             - run
             - --out
             - experimental-prometheus-rw
-            - /scripts/redirect-smoke.js
+            - /scripts/${SCRIPT_FILE}
           env:
             - name: BASE_URL
               value: "${BASE_URL}"
             - name: SLUG
+              value: "${SLUG}"
+            - name: SLUGS
               value: "${SLUG}"
             - name: VUS
               value: "${VUS}"

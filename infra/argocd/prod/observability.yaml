@@ -1,0 +1,72 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: snipy-prod-observability
+  namespace: argocd
+spec:
+  project: default
+  source:
+    chart: kube-prometheus-stack
+    repoURL: https://prometheus-community.github.io/helm-charts
+    targetRevision: 88.5.0
+    helm:
+      releaseName: kube-prometheus
+      values: |
+        prometheus:
+          prometheusSpec:
+            serviceMonitorSelectorNilUsesHelmValues: false
+            serviceMonitorNamespaceSelector: {}
+            enableRemoteWriteReceiver: true
+            retention: 15d
+            resources:
+              requests: { cpu: 250m, memory: 512Mi }
+              limits: { cpu: 1000m, memory: 2Gi }
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: gp3
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests: { storage: 20Gi }
+        grafana:
+          admin:
+            existingSecret: grafana-admin-credentials
+          sidecar:
+            dashboards:
+              enabled: true
+              searchNamespace: ALL
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 300m, memory: 512Mi }
+          persistence:
+            enabled: true
+            storageClassName: gp3
+            size: 5Gi
+        alertmanager:
+          alertmanagerSpec:
+            resources:
+              requests: { cpu: 25m, memory: 64Mi }
+              limits: { cpu: 100m, memory: 128Mi }
+            storage:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: gp3
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests: { storage: 2Gi }
+        # EKS 관리형 컨트롤 플레인이라 노출되지 않는 컴포넌트 — 켜봤자 타겟이 영구 Down으로 남음
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeEtcd:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=true

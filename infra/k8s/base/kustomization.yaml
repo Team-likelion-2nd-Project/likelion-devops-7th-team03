@@ -12,6 +12,10 @@ resources:
 - athena-batch-cronjob.yaml
 - athena-batch-configmap.yaml
 - cluster-secret-store.yaml
+- service-monitor-redirect.yaml
+- service-monitor-management.yaml
+- grafana-dashboards.yaml
+- storageclass-gp3.yaml
 - hpa.yaml
 images:
 - name: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/management-service

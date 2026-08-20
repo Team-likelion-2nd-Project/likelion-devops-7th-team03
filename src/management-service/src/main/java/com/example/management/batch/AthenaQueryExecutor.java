@@ -31,19 +31,22 @@ public class AthenaQueryExecutor {
      * 쿼리를 실행하고 결과를 rowMapper로 변환한 리스트를 반환한다.
      * 첫 번째 결과 행(헤더)은 자동으로 건너뛴다.
      */
-    public <T> List<T> execute(String sql, String workgroup, Function<List<String>, T> rowMapper) {
-        String queryExecutionId = startQuery(sql, workgroup);
+    public <T> List<T> execute(String sql, String workgroup, String database, Function<List<String>, T> rowMapper) {
+        String queryExecutionId = startQuery(sql, workgroup, database);
         waitForCompletion(queryExecutionId);
         return fetchAllResults(queryExecutionId, rowMapper);
     }
 
-    private String startQuery(String sql, String workgroup) {
+    private String startQuery(String sql, String workgroup, String database) {
         StartQueryExecutionRequest request = StartQueryExecutionRequest.builder()
                 .queryString(sql)
                 .workGroup(workgroup)
+                .queryExecutionContext(QueryExecutionContext.builder()
+                        .database(database)
+                        .build())
                 .build();
         StartQueryExecutionResponse response = athenaClient.startQueryExecution(request);
-        log.info("Athena query started. queryExecutionId={}", response.queryExecutionId());
+        log.info("Athena query started. queryExecutionId={}, database={}", response.queryExecutionId(), database);
         return response.queryExecutionId();
     }
 

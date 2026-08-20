@@ -67,7 +67,7 @@ public class AthenaBatchRunner implements CommandLineRunner {
 
     private void runDailyStats(LocalDate targetDate) {
         String sql = AthenaQueries.dailyStats(targetDate);
-        List<DailyStatRow> rows = queryExecutor.execute(sql, workgroup, DailyStatRow::from);
+        List<DailyStatRow> rows = queryExecutor.execute(sql, workgroup, database, DailyStatRow::from);
         dailyStatsRepository.upsertAll(rows);
         log.info("link_daily_stats UPSERT 완료. rows={}", rows.size());
     }
@@ -76,7 +76,7 @@ public class AthenaBatchRunner implements CommandLineRunner {
         for (String dimensionType : List.of("REFERRER", "DEVICE", "REGION")) {
             String sql = AthenaQueries.dimensionStats(targetDate, dimensionType);
             List<DimensionStatRow> rows = queryExecutor.execute(
-                    sql, workgroup, values -> DimensionStatRow.from(values, dimensionType));
+                    sql, workgroup, database, values -> DimensionStatRow.from(values, dimensionType));
             dimensionStatsRepository.upsertAll(rows);
             log.info("link_daily_dimension_stats UPSERT 완료. dimensionType={} rows={}",
                     dimensionType, rows.size());

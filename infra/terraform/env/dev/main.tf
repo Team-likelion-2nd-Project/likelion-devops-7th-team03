@@ -118,10 +118,11 @@ resource "kubernetes_config_map" "management_service_config" {
     REDIS_HOST                         = module.database.elasticache_primary_endpoint
     REDIS_PORT                         = "6379"
     REDIRECT_CACHE_TTL                 = "10m"
-    KAKAO_REDIRECT_URI                 = "https://${var.domain_name}/auth/kakao/callback"
+    KAKAO_REDIRECT_URI                 = "https://app.${var.domain_name}/auth/kakao/callback"
     JWT_ACCESS_TOKEN_VALIDITY_SECONDS  = "1800"
     JWT_REFRESH_TOKEN_VALIDITY_SECONDS = "1209600"
     SHORT_URL_BASE_URL                 = "https://${var.domain_name}"
+    CORS_ALLOWED_ORIGINS               = "https://app.${var.domain_name}"
   }
 
   depends_on = [module.database]

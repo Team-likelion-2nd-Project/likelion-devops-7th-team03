@@ -5,7 +5,7 @@ EKS 클러스터 안에서 k6로 부하테스트를 1회성으로 실행하기 �
 ## 사전 준비
 
 1. `infra/argocd/{dev,prod}/observability.yaml`이 배포되어 `monitoring` 네임스페이스에 kube-prometheus-stack(Prometheus/Grafana)이 떠 있어야 함.
-2. Grafana admin 비밀번호는 수동으로 만들 필요 없음 — `modules/app-secrets`가 Secrets Manager에 랜덤 비밀번호를 생성해두고, observability Application의 `extraManifests`에 포함된 `ExternalSecret`이 배포 시 자동으로 `grafana-admin-credentials` 시크릿을 만든다. 비밀번호 값을 보려면:
+2. Grafana admin 비밀번호는 `modules/app-secrets`가 자동 생성 → ESO가 시크릿으로 반영. 조회:
    ```bash
    aws secretsmanager get-secret-value \
      --secret-id snipy-dev-cluster/app/grafana-admin-password \
@@ -13,20 +13,24 @@ EKS 클러스터 안에서 k6로 부하테스트를 1회성으로 실행하기 �
    # prod는 snipy-cluster/app/grafana-admin-password
    ```
 3. `envsubst` 필요 (macOS: `brew install gettext`).
+4. **base-url은 공개 도메인 말고 클러스터 내부 Service DNS(`http://redirect-service:8080`)로.** WAF의 `waf_allowed_countries=["KR"]` 때문에 클러스터(싱가포르 리전) 안에서 공개 도메인을 치면 CloudFront가 403으로 막는다 (직접 겪음).
 
 ## 실행
 
 ```bash
-load-test/run.sh <kubectl-context> <script-file> <base-url> <slug> [vus] [duration]
+load-test/run-smoke.sh <kubectl-context> <script-file> <base-url> <slug> [vus] [duration]
 
 # 간단한 smoke test (vus/duration 기반) — slug는 management-service API로 미리 만들어둔 값
-load-test/run.sh snipy redirect-smoke.js https://dev.snipy.life test 10 30s
+load-test/run-smoke.sh snipy redirect-smoke.js http://redirect-service:8080 test 10 30s
 
-# 바이럴 스파이크 시나리오 — 콜드 링크 생성부터 실행/정리까지 원스톱
-load-test/viral-spike-run.sh snipy https://dev.snipy.life 3
+# 바이럴 스파이크 시나리오 — 콜드 링크 생성부터 실행/정리까지 원스톱 (base-url 기본값이 이미 내부 DNS)
+load-test/viral-spike-run.sh snipy
+
+# Load/Stress (PEAK_TPS만 다름) — 링크 30만 개 생성부터 실행/정리까지 원스톱
+load-test/normal-traffic-run.sh snipy
 ```
 
-`redirect-smoke.js`용 `slug`는 실제로 links 테이블에 등록된 값이어야 302를 받는다. `viral-spike.js`는 **콜드(캐시에 없는) 링크**가 필요한데, management-service API로는 만들 수 없다 — API로 만들면 생성 즉시 Redis에 캐시가 채워지고, slug도 서버가 자동 생성해서 지정이 안 되기 때문. 그래서 `viral-spike-run.sh`가 MySQL에 직접 INSERT해서 콜드 링크를 만들고, 테스트 후 자동으로 정리한다 (자세한 내용은 `SCENARIOS.md` 참고).
+`viral-spike.js`/`normal-traffic.js`는 management-service API로 못 만드는 링크(캐시 즉시 채워짐, slug 자동생성)가 필요해서, `*-run.sh`가 MySQL에 직접 INSERT하고 테스트 후 정리한다 (자세한 내용은 `SCENARIOS.md`).
 
 ## 결과 확인
 
@@ -39,7 +43,7 @@ kubectl --context <context> port-forward -n monitoring svc/kube-prometheus-grafa
 
 ## 정리
 
-- Job/ConfigMap: 다음 실행 시 `run.sh`가 자동으로 지우고 새로 만듦. 수동 정리는:
+- Job/ConfigMap: 다음 실행 시 `run-smoke.sh`가 자동으로 지우고 새로 만듦. 수동 정리는:
   ```bash
   kubectl --context <context> delete job k6-load-test configmap k6-load-test-script
   ```

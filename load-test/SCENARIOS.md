@@ -21,14 +21,57 @@ snipy는 URL 단축 + 클릭 분석 서비스. 타겟 고객은 자체 인프라
 |---|---|
 | 평상시 Throughput | ~230 TPS |
 | 바이럴 Throughput | ~800 TPS |
-| Latency | 미정 — percentile 기준 필요 (p95/p99) |
-| 에러율 | 미정 — 5xx 허용 임계치 필요 |
+| Latency | **p99 < 150ms** |
+| 에러율 | **0%** |
 
-> Latency/에러율 임계치는 아직 팀 논의로 확정 안 됨. 이번 1차 테스트는 관찰 위주로 진행하고, 결과를 보고 임계치를 역산하는 쪽으로 간다.
+시간 제약상 **Load / Stress / Spike / Smoke 4가지**를 확실하게 보여주는 데 집중한다 (Smoke는 `redirect-smoke.js`로 이미 있음, Load/Stress는 `normal-traffic.js` 하나를 `PEAK_TPS`만 바꿔서 재사용, Spike는 `viral-spike.js`). Breakpoint/Soak은 후속 라운드로 미룸.
 
-## 이번 라운드: 실행 시나리오 — "Warmup 없는 바이럴 링크"
+## 시나리오 1: Load / Stress (겸용)
 
-시간 제약상 여러 시나리오(load/stress/spike/breakpoint/soak) 중 **하나를 확실하게** 보여주는 데 집중한다. 다른 시나리오는 후속 라운드로 미룸.
+`normal-traffic.js` 하나를 `PEAK_TPS` 값만 바꿔서 두 시나리오에 재사용한다 — Load는 낮은 TPS(예: 23), Stress는 높은 TPS(예: 230)로 실행. 처음엔 "비인기 시간대→퇴근시간 피크" 곡선(여러 단계 ramp)으로 짰다가, 분석이 복잡해져서 **상승 5분 → 유지 10분 → 하강 5분(총 20분)**의 단순한 사다리꼴로 정리했다.
+
+### 테스트 파라미터
+
+- 스크립트: `load-test/normal-traffic.js`
+- Executor: `ramping-arrival-rate`, 0 → `PEAK_TPS`로 5분 상승 → 10분 유지 → 5분 하강. 총 20분
+- 트래픽 분포(80/20 원칙): 링크 풀 하나(`SLUG_PREFIX` + `SLUG_COUNT`, 기본 30만 개 — 위 "동시 활성 링크" 추정치와 동일)를 생성하고, 그 안에서 앞쪽 20%(`HOT_RATIO`)를 인기 구간으로 취급 — 요청의 80%(`HOT_TRAFFIC_RATIO`)는 그 구간에서, 나머지 20%는 뒤쪽 80% 구간에서 균등 랜덤으로 뽑는다. 별도 풀을 만들 필요가 없어 INSERT/계산이 단순함 (처음엔 hot/cold를 별도 풀로 나누고 콜드 풀 크기를 coupon collector로 계산했는데 너무 복잡해서 이 방식으로 정리)
+- 실행(원스톱): `load-test/normal-traffic-run.sh <context> [base-url] [num-links] [peak-tps]` (기본값: 30만 개, 230 TPS)
+
+### 판정 기준
+
+- 목표: p99 latency < 150ms, 에러율 0%
+- 캐시 히트율이 시간이 지나며 어느 수준으로 수렴하는지 관찰 (Grafana `Cache Result Rate` 패널)
+
+### 데이터 파이프라인 정확성 검증 (Athena)
+
+앱 API로는 클릭 로그 파이프라인(redirect-service → Kinesis Firehose → S3 → Athena) 자체가 정상 동작하는지 확인할 방법이 없어서, Athena 쿼리로 직접 본다. `normal-traffic.js`는 VU(가상 사용자)마다 User-Agent/Referer/`visitor_id` 쿠키 조합을 고정 배정해서 보내므로(같은 방문자는 항상 같은 조합 — 실제 세션처럼), UA 파싱(yauaa)/referrer 분류/visitor 식별이 정확히 됐는지 사후 검증이 가능하다.
+
+**주의**: `viral-spike-run.sh`/`normal-traffic-run.sh`는 테스트 직후 `trap cleanup EXIT`로 링크를 바로 지운다. click 이벤트 자체는 MySQL 행과 무관하게 이미 Kinesis로 나간 상태라 상관없지만, **Athena 배치(`link_daily_stats` 집계)가 나중에 도는 경우 이미 삭제된 `link_id`를 참조하게 되어 FK 위반으로 실패한다.** 파이프라인을 raw click_events(S3/Athena) 레벨까지만 볼 거면 cleanup 그대로 둬도 되고, `link_daily_stats` 집계까지 보고 싶으면 이번 실행만 cleanup을 건너뛰고 나중에 수동으로 지워야 한다.
+
+**격리 기준**: 다른(실제) 트래픽과 섞여도 결과가 헷갈리지 않으려면 `visitor_id`나 `referrer`가 아니라 **`link_id`(테스트 전용 slug)로 필터링**하는 게 안전하다 — referrer(Instagram 등)나 visitor_id는 실제 방문자 값과 이론상 겹칠 수 있지만, 테스트 전용 slug는 실제 트래픽이 절대 안 침. `visitor_id`는 대신 "이 세션에 보낸 헤더가 정확히 파싱됐는지" 세션 단위로 대조하는 용도로 쓴다.
+
+**일관성 자체 검증 쿼리** (기대값을 몰라도 됨 — 같은 visitor_id가 요청마다 다른 파싱 결과를 냈다면 버그):
+```sql
+SELECT visitor_id,
+       COUNT(DISTINCT device_type || '|' || operating_system || '|' || browser || '|' || referrer_category) AS distinct_combos
+FROM snipy_click_logs.click_events
+WHERE year='2026' AND month='08' AND day='20'
+  AND from_iso8601_timestamp(clicked_at) BETWEEN TIMESTAMP '2026-08-20 15:06:00' AND TIMESTAMP '2026-08-20 15:19:00'
+GROUP BY visitor_id
+HAVING COUNT(DISTINCT device_type || '|' || operating_system || '|' || browser || '|' || referrer_category) > 1
+```
+정상이면 0건. 한 방문자가 여러 조합으로 잡히면 파싱/식별 어딘가 문제가 있다는 뜻.
+
+**실제 값 스팟체크** (k6 Job 로그에 `visitor VU=.. visitor_id=.. ua_profile=.. referrer_profile=..`로 배정 내역이 남음 — 그 visitor_id로 조회해서 UA_PROFILES/REFERRER_PROFILES 배열의 기대값과 눈으로 대조):
+```sql
+SELECT visitor_id, device_type, operating_system, browser, referrer_category, COUNT(*) AS clicks
+FROM snipy_click_logs.click_events
+WHERE year='2026' AND month='08' AND day='20'
+  AND visitor_id = '<k6 로그에서 확인한 visitor_id>'
+GROUP BY visitor_id, device_type, operating_system, browser, referrer_category
+```
+
+## 시나리오 2: 바이럴 스파이크 — "Warmup 없는 바이럴 링크"
 
 ### 가설
 
@@ -50,7 +93,8 @@ herd 크기는 "첫 DB 조회+캐시 write-back 왕복시간" 동안 도착하�
 - Executor: `ramping-arrival-rate` (VU 기반이 아닌 목표 TPS 기반 — latency가 늘어도 요청 발생률이 줄지 않도록)
 - 프로파일: 0 → 800 TPS를 10초 만에 램프업(바이럴의 "갑자기 몰림" 표현) → 4분 30초 유지 → 20초 램프다운. 총 5분
 - 대상: 사전 캐싱되지 않은 콜드 링크. herd를 더 크고 뚜렷하게 보고 싶으면 콤마로 여러 개(3~5개) 동시 지정 가능
-- 실행(원스톱): `load-test/viral-spike-run.sh <context> <base-url> [num-slugs]`
+- 대상 URL: 클러스터 내부 Service DNS(`http://redirect-service:8080`, 기본값). 공개 도메인은 WAF geo-match(KR만 허용) 때문에 클러스터(ap-southeast-1) 안에서 치면 CloudFront가 403으로 막는다 — 실제로 겪은 문제. 이 테스트 대상은 애초에 CDN이 아니라 redirect-service 백엔드라서 내부 DNS가 더 맞기도 함
+- 실행(원스톱): `load-test/viral-spike-run.sh <context> [base-url] [num-slugs]`
 
 ### 콜드 링크는 어떻게 만드나
 
@@ -74,14 +118,37 @@ management-service API로는 못 만든다 — API로 생성하면 트랜잭션 
 ### 판정 기준 (초안 — 확정 필요)
 
 - herd 구간(첫 1~2초) 동안 5xx 비율 < ?% — **미정, 1차 실행 결과 보고 정함**
-- herd 이후(예: t=5초~) 안정화 구간의 p95 latency < 150ms 유지 여부
+- herd 이후(예: t=5초~) 안정화 구간의 p99 latency < 150ms(성능 요구사항) 유지 여부
 - 테스트 전체에서 502/504(타임아웃/과부하로 인한 게이트웨이 오류) 발생 여부
 
-## 후속 계획 (이번 라운드에는 포함 안 함)
+### 1차 실행 결과 (2026-08-20, dev)
 
-동시성 보호 적용 전/후 비교로 개선 효과를 데이터로 증명하는 것까지가 목표. 후보:
+캐시 미스 herd(원래 가설)를 보기도 전에 **완전히 다른, 더 근본적인 병목**이 먼저 나타나서 락 가설은 아직 검증 못 함.
 
-1. **베이스라인 (이번 라운드)**: 보호 없음 — 위 시나리오 그대로
+**겪은 문제 1 — WAF가 클러스터 내부 트래픽을 막음.** 처음엔 `BASE_URL`을 공개 도메인(`https://dev.snipy.life`)으로 뒀는데 100% 실패. `curl -v`로 확인해보니 `server: CloudFront`, "Request blocked" — WAF의 `waf_allowed_countries=["KR"]` geo-match 규칙에 걸림. k6 Job이 뜨는 EKS 노드가 `ap-southeast-1`(싱가포르)이라 NAT Gateway 아웃바운드 IP도 싱가포르로 잡혀서 CloudFront가 비KR로 판정하고 차단. **해결**: 테스트 대상을 클러스터 내부 Service DNS(`http://redirect-service:8080`)로 변경 — 이 테스트는 애초에 CDN이 아니라 백엔드가 대상이라 더 적합하기도 함.
+
+**겪은 문제 2 — redirect-service 파드가 CPU 부족으로 쓰로틀링.** 내부 DNS로 수정 후 재실행하니 체크는 100% 통과(에러 없음)했지만 latency가 avg 1.02s, p95 2.72s, max 4.99s로 매우 높았고 `dropped_iterations: 94245`(k6가 목표 800 TPS를 못 만들어냄)까지 발생. Grafana에서 캐시 히트율은 실제로 높게 나와서(write-back은 정상) 처음엔 "캐시 조회 자체가 느리다"고 해석했으나, Prometheus에서 직접 확인해보니:
+
+| 메트릭 | 평소 | 테스트 피크(15:08~15:10) |
+|---|---|---|
+| ElastiCache `EngineCPUUtilization` | ~0.2~0.3% | ~2.5% (거의 그대로, 병목 아님) |
+| redirect-service `container_cpu_cfs_throttled_periods_total` rate | 0.01~0.14/s | **43~46/s** (300배+ 급증) |
+| redirect-service CPU 사용량 합계 (limit=2파드×500m=1.0 vCPU) | - | 2.6~2.7 (vCPU 단위, limit 초과) |
+
+Redis는 멀쩡했고, **redirect-service 파드(고정 2개, CPU limit 500m×2=1.0 vCPU)가 심하게 쓰로틀링**되고 있었다. "캐시 조회가 느림"으로 보였던 건 Redis 응답이 느린 게 아니라, 스로틀링당한 JVM 스레드가 커널한테 CPU 시간을 못 받아 그 안에서 실행되던 Redis 호출까지 같이 멈춰있던 것.
+
+**결론**: 800 TPS는 지금 정적 capacity(2파드, HPA 없음)로는 램프 속도와 무관하게 도달 불가 — 지속 부하가 ~450 TPS를 넘는 순간 스로틀링이 시작된다. 락 가설(캐시 미스 herd → DB/HikariCP 병목)을 순수하게 보려면, **이번 스파이크 재실행 전에 CPU capacity 문제부터 없애야 한다** (파드 CPU limit 상향, 필요시 replicas 임시 상향 — 아래 "후속 계획" 참고). CPU capacity 부족 자체는 "정적 replica라 오토스케일링이 스파이크에 못 따라간다"는 별도의 유효한 결론으로 남겨둔다.
+
+**겪은 문제 3 (가장 근본적) — k6가 URL을 그대로 메트릭 라벨로 써서 Prometheus 카디널리티가 폭발.** 이후 HPA 실험(30만 개 링크 + 800 TPS `normal-traffic.js`) 도중 Prometheus 자체가 크래시루프에 빠졌다(6회 재시작, WAL replay 44초+, startup probe 타임아웃으로 계속 재시작). `/api/v1/status/tsdb`로 확인해보니 **시계열이 87만 개**, 그중 k6 HTTP 메트릭 9종류가 각각 **85,111개**씩 — `http.get()` 호출에 `tags: { name: ... }`을 안 줘서 k6가 요청 URL(슬러그별로 전부 다름, 최대 30만 가지)을 그대로 메트릭 라벨로 써버린 것. Prometheus 리소스를 올려도(500m/1Gi → 1500m/2Gi) 근본 원인은 이거였다. 추가로 Grafana에 import했던 공식 k6 대시보드(id 19665)가 `testid` 라벨 기준으로 필터링하는데 우리는 그 라벨을 안 써서 `testid=~"()"`(사실상 전체 매칭)라는 무거운 쿼리를 계속 날리고 있었던 것도 확인됨 — 카디널리티 폭발과 겹쳐서 크래시를 더 악화시켰을 것으로 추정.
+
+**해결**: `viral-spike.js`/`normal-traffic.js`/`redirect-smoke.js` 전부 `http.get()`에 `tags: { name: "redirect" }`(normal-traffic.js는 hot/cold 구분까지, 값 2개뿐이라 안전) 추가 — 이제 슬러그가 몇 개든 메트릭은 고정된 이름 몇 개로만 쌓인다. id 19665 대시보드는 라벨 체계가 안 맞아서 계속 안 쓰기로 함(Explore로 직접 PromQL 조회). 이미 쌓인 87만 개 시계열은 retention(3d) 지나면 자연히 빠짐 — 강제로 안 지움.
+
+## 후속 계획
+
+동시성 보호 적용 전/후 비교로 개선 효과를 데이터로 증명하는 것까지가 목표. 순서:
+
+0. **CPU capacity 문제 먼저 해소**: redirect-service 파드 CPU limit을 넉넉히 올리고(예: 500m→1500m~2000m), 이번 재테스트에 한해 replicas도 임시로 늘려서(HPA 반응 속도 이슈 회피) 800 TPS를 지속 부하로도 감당할 수 있는 상태를 먼저 만든다. 그래야 아래 1~3단계에서 관찰되는 지연이 진짜 캐시/DB 이슈인지 순수하게 구분됨
+1. **베이스라인**: 보호 없음 — 위 시나리오 그대로, capacity만 확보된 상태로 재실행
 2. **in-process 락**: 슬러그별 JVM 로컬 락(`synchronized` 또는 Caffeine single-flight). 구현 빠름(~1시간). 한계: 파드 개수만큼은 여전히 중복 조회됨 (파드 경계를 못 넘음)
 3. **Redis 분산 락**: `SET lock:{slug} NX PX 3000` + 락 획득 실패 시 짧은 폴링(캐시가 채워지길 기다림) → 몇 번 폴링해도 안 채워지면 안전장치로 직접 조회. 기존 `RedisRedirectCache`의 Lua 스크립트 패턴 재사용 가능, 새 라이브러리 불필요. 클러스터 전체에서 DB 조회를 사실상 1번으로 수렴시킴
 
@@ -89,8 +156,6 @@ management-service API로는 못 만든다 — API로 생성하면 트랜잭션 
 
 ## 다른 시나리오 (초안 — 이번 라운드에 실행 안 함)
 
-- **Load test**: 평균 23 TPS, 10분, 인기 링크 80/20 분포(상위 20%가 트래픽 80% 차지, 조건문 게이팅), 캐시 히트 80% 예상
-- **Stress test**: 피크 230 TPS, 10분, load test와 동일 분포 — 지속 부하에서 DB 읽기(캐시 미스 20% 분)가 누적되는 패턴 확인용
 - **Breakpoint test**: TPS를 한계까지 점진적 증가. 종료 조건(에러율/latency 임계치 또는 안전 상한 TPS) 필요 — prod RDS가 `db.t3.micro`라 여기서 DB가 먼저 무너질 것으로 예상(가설)
 - **Soak test**: 1시간 — 진짜 leak-hunting용 soak(보통 수 시간 이상)이라기보다는 짧은 안정성 체크로 취급
 

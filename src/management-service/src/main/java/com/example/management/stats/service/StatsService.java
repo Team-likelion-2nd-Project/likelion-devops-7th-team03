@@ -132,27 +132,6 @@ public class StatsService {
         return new DimensionBreakdownResponse(linkUuid, dimensionType.name(), items);
     }
 
-    /**
-     * 실시간 접속자(클릭) 수 조회 — DB를 전혀 거치지 않고 Redis만 조회한다.
-     * redirector가 클릭마다 INCR로 올려둔 값을 그대로 읽기만 함.
-     * (키 형식: stats:{KST date}:link:{내부 link_id}:clicks)
-     * 소유권 검증은 여기서도 동일하게 resolveOwnedLink()로 처리한다
-     * (링크 id만 알면 남의 링크 실시간 클릭수를 볼 수 있는 문제를 막기 위함).
-     */
-    public long getRealtimeClickCount(Long userId, String linkUuid) {
-        Link link = resolveOwnedLink(userId, linkUuid);
-        String key = clicksKey(LocalDate.now(KST), link.getId());
-        String value = redisTemplate.opsForValue().get(key);
-        return value == null ? 0L : Long.parseLong(value);
-    }
-
-    /** 오늘(KST) 잠정 UV를 Redis HyperLogLog에서 근사치로 읽는다. */
-    public long getRealtimeUniqueVisitorCount(Long userId, String linkUuid) {
-        Link link = resolveOwnedLink(userId, linkUuid);
-        return redisTemplate.opsForHyperLogLog()
-                .size(uniqueVisitorsKey(LocalDate.now(KST), link.getId()));
-    }
-
     /** 대시보드 실시간 endpoint가 소유권을 한 번만 확인하도록 click·UV를 함께 읽는다. */
     public RealtimeStats getRealtimeStats(Long userId, String linkUuid) {
         Link link = resolveOwnedLink(userId, linkUuid);

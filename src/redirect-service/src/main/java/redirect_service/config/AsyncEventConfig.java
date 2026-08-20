@@ -30,6 +30,11 @@ public class AsyncEventConfig {
         return executor("realtime=stats-recorder-", 1, 2, 10_000);
     }
 
+    @Bean(name = "firehoseClickEventPublisherExecutor")
+    public Executor FirehoseClickEventPublisherExecutor() {
+        return executor("firehose-publisher-", 1, 2, 10_000);
+    }
+
     private Executor executor(String threadNamePrefix, int corePoolSize, int maxPoolSize, int queueCapacity) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(corePoolSize);

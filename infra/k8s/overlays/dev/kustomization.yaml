@@ -8,4 +8,6 @@ resources:
 patches:
   - path: patch-sa.yaml
   - path: patch-ingress.yaml
-  - path: patch-replicas.yaml
+  - path: patch-athena-cronjob.yaml
+  - path: patch-athena-configmap.yaml
+  - path: patch-athena-sa.yaml

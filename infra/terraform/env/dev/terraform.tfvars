@@ -6,7 +6,7 @@ single_nat_gateway = true # NAT Gateway 1개를 두 AZ가 공유
 
 node_instance_type = "t3.medium" # prod와 동일 타입, 개수만 줄임
 node_min_size      = 2
-node_max_size      = 4 # kube-prometheus-stack 등 추가 부하 시 cluster-autoscaler가 2→4로 확장
+node_max_size      = 4
 node_desired_size  = 2
 
 rds_multi_az = false # Single-AZ
@@ -28,4 +28,4 @@ waf_allowed_countries = ["KR"]
 
 # 1단계 apply: 비워둔 채로 적용 (ALB가 아직 없어서 CloudFront/ALB 조회 리소스는 스킵됨)
 # 2단계: k8s Ingress 배포 후 실제 ALB DNS 이름을 확인해 채우고 재적용 (prod와 동일한 절차)
-origin_alb_domain_name = ""
+origin_alb_domain_name = "alb.dev.snipy.life"

@@ -34,7 +34,8 @@ dependencies {
 	// IRSA(EKS 서비스어카운트) 인증은 SDK 기본 자격증명 체인이 자동 처리한다
 	// (AWS_ROLE_ARN, AWS_WEB_IDENTITY_TOKEN_FILE 환경변수를 CronJob이 자동 주입).
 	implementation 'software.amazon.awssdk:sts'
-
+	
+	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.13.0'
 	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.13.0'
 	compileOnly 'org.projectlombok:lombok'

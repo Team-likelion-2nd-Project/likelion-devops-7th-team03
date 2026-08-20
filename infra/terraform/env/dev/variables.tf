@@ -101,7 +101,7 @@ variable "waf_allowed_countries" {
 }
 
 variable "origin_alb_domain_name" {
-  description = "AWS Load Balancer Controller가 생성한 ALB의 DNS 이름 (Ingress 배포 후 확인하여 입력)"
+  description = "AWS Load Balancer Controller가 생성한 ALB의 이름 (Ingress 배포 후 확인하여 입력) DNS 값 안됨"
   type        = string
   default     = "" # Ingress 배포 후 채워서 재적용
 }

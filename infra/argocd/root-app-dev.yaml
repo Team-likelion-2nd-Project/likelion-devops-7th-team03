@@ -14,4 +14,8 @@ spec:
     namespace: argocd
   syncPolicy:
     automated:
-      selfHeal: true
+      # 임시로 끔 — 라이브 디버깅/부하테스트 중 하위 앱(snipy-dev 등)에 대한 patch가
+      # 계속 되돌아가는 문제 때문. 이 파일은 아무도 auto-sync 안 해서 값을 바꿔도
+      # `kubectl apply -f root-app-dev.yaml`로 직접 재적용해야 실제로 반영된다.
+      # TODO: 작업 끝나면 selfHeal: true로 복구하고 다시 apply할 것.
+      selfHeal: false

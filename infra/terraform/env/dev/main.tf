@@ -46,6 +46,7 @@ module "database" {
   database_subnets                       = module.network.database_subnets
   node_security_group_id                 = module.cluster.node_security_group_id
   elasticache_node_type                  = var.elasticache_node_type
+  rds_instance_class                     = var.rds_instance_class
   rds_multi_az                           = var.rds_multi_az
   elasticache_num_cache_clusters         = var.elasticache_num_cache_clusters
   elasticache_automatic_failover_enabled = var.elasticache_automatic_failover_enabled

@@ -20,7 +20,7 @@ resources:
 images:
 - name: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/management-service
   newName: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/management-service
-  newTag: 252a1a38d8fcece7c597452924d22e4d22143560
+  newTag: 791f88936458388d22f563951d1804ba8294c9b0
 - name: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/redirect-service
   newName: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/redirect-service
   newTag: 791f88936458388d22f563951d1804ba8294c9b0

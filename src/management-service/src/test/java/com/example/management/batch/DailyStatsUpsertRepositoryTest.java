@@ -7,8 +7,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -23,15 +27,16 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /**
- * [뼈대] DimensionStatsUpsertRepositoryTest와 동일한 패턴.
- * chunkSize/maxRetry/bisectFloor/circuitBreakerThreshold를 작은 값으로 주입하고,
- * Sleeper를 no-op으로 넣어서 재시도·bisect를 실제 대기 없이 검증한다.
+ * DailyStatsUpsertRepository 단위 테스트.
+ * - TransactionTemplate은 Mock/익명 클래스로 콜백을 즉시 실행(Pass-through)하도록 설정.
+ * - chunkSize/maxRetry/bisectFloor/circuitBreakerThreshold를 작은 값으로 주입하고,
+ *   Sleeper를 no-op으로 넣어 재시도·bisect를 대기 없이 검증.
  */
 @ExtendWith(MockitoExtension.class)
 class DailyStatsUpsertRepositoryTest {
 
     private static final LocalDate STAT_DATE = LocalDate.of(2026, 8, 20);
-    private static final DailyStatsUpsertRepository.Sleeper NO_OP_SLEEPER = millis -> { /* 테스트에선 대기 안 함 */ };
+    private static final DailyStatsUpsertRepository.Sleeper NO_OP_SLEEPER = millis -> { /* 테스트 대기 없음 */ };
 
     @Mock
     private NamedParameterJdbcTemplate jdbcTemplate;
@@ -44,8 +49,24 @@ class DailyStatsUpsertRepositoryTest {
     }
 
     private DailyStatsUpsertRepository newRepository(int chunkSize, int maxRetry, int bisectFloor, int circuitBreakerThreshold) {
+        // 단위 테스트용 TransactionTemplate: 별도 트랜잭션 매니저 없이 넘겨받은 콜백을 바로 실행
+        TransactionTemplate testTransactionTemplate = new TransactionTemplate() {
+            @Override
+            public <T> T execute(TransactionCallback<T> action) {
+                return action.doInTransaction(new SimpleTransactionStatus());
+            }
+        };
+
         return new DailyStatsUpsertRepository(
-                jdbcTemplate, chunkSize, maxRetry, /*baseBackoffMillis*/ 1L, bisectFloor, circuitBreakerThreshold, NO_OP_SLEEPER);
+                jdbcTemplate,
+                testTransactionTemplate,
+                chunkSize,
+                maxRetry,
+                /*baseBackoffMillis*/ 1L,
+                bisectFloor,
+                circuitBreakerThreshold,
+                NO_OP_SLEEPER
+        );
     }
 
     @Test
@@ -77,9 +98,10 @@ class DailyStatsUpsertRepositoryTest {
         List<AthenaBatchRunner.DailyStatRow> rows = rows(1, 7);
         rows.set(3, poisonRow(poisonLinkId)); // 첫 청크(1~4) 안에 섞어 넣음
 
+        // poison row는 데이터 무결성 오류(DataIntegrityViolationException)로 시뮬레이션
         stubFailOnlyForLinkId(poisonLinkId);
 
-        repository.upsertAll(rows); // 예외 없이 끝나야 함
+        repository.upsertAll(rows); // dead-letter로 격리 후 정상 완료되어야 함
 
         ArgumentCaptor<SqlParameterSource[]> captor = ArgumentCaptor.forClass(SqlParameterSource[].class);
         verify(jdbcTemplate, atLeastOnce()).batchUpdate(anyString(), captor.capture());
@@ -87,7 +109,7 @@ class DailyStatsUpsertRepositoryTest {
         long poisonOnlyCalls = captor.getAllValues().stream()
                 .filter(params -> params.length == 1 && linkIdOf(params[0]) == poisonLinkId)
                 .count();
-        assertThat(poisonOnlyCalls).isGreaterThanOrEqualTo(2); // maxRetry=2
+        assertThat(poisonOnlyCalls).isGreaterThanOrEqualTo(2); // maxRetry=2회 시도 후 dead-letter 확정
 
         boolean anyCleanBatchSucceeded = captor.getAllValues().stream()
                 .anyMatch(params -> params.length > 1
@@ -96,15 +118,15 @@ class DailyStatsUpsertRepositoryTest {
     }
 
     @Test
-    void 연속으로_청크가_실패하면_서킷브레이커가_배치를_중단시킨다() {
+    void 연속으로_시스템장애가_발생하면_서킷브레이커가_배치를_중단시킨다() {
         repository = newRepository(/*chunkSize*/ 2, /*maxRetry*/ 1, /*bisectFloor*/ 1, /*circuitBreakerThreshold*/ 2);
-        List<AthenaBatchRunner.DailyStatRow> rows = rows(1, 6); // 청크 3개(2,2,2)
+        List<AthenaBatchRunner.DailyStatRow> rows = rows(1, 6); // 청크 3개(2, 2, 2)
 
         stubAlwaysFail();
 
         assertThatThrownBy(() -> repository.upsertAll(rows))
                 .isInstanceOf(BatchCircuitBreakerException.class)
-                .hasMessageContaining("연속 실패");
+                .hasMessageContaining("연속");
 
         ArgumentCaptor<SqlParameterSource[]> captor = ArgumentCaptor.forClass(SqlParameterSource[].class);
         verify(jdbcTemplate, atLeastOnce()).batchUpdate(anyString(), captor.capture());
@@ -114,7 +136,7 @@ class DailyStatsUpsertRepositoryTest {
                 .map(this::linkIdOf)
                 .collect(Collectors.toSet());
 
-        assertThat(attemptedLinkIds).doesNotContain(5L, 6L); // 청크3은 시도조차 안 됨
+        assertThat(attemptedLinkIds).doesNotContain(5L, 6L); // 청크3(id: 5,6)은 시도조차 안 됨
     }
 
     // ---- 헬퍼 ----
@@ -131,7 +153,7 @@ class DailyStatsUpsertRepositoryTest {
 
     private void stubAlwaysFail() {
         when(jdbcTemplate.batchUpdate(anyString(), any(SqlParameterSource[].class)))
-                .thenThrow(new DataAccessResourceFailureException("DB 장애 시뮬레이션"));
+                .thenThrow(new DataAccessResourceFailureException("DB Connection 장애 시뮬레이션"));
     }
 
     private void stubFailOnlyForLinkId(long poisonLinkId) {
@@ -141,7 +163,7 @@ class DailyStatsUpsertRepositoryTest {
                     boolean containsPoison = java.util.Arrays.stream(params)
                             .anyMatch(p -> linkIdOf(p) == poisonLinkId);
                     if (containsPoison) {
-                        throw new DataAccessResourceFailureException("poison row 포함된 batch 실패");
+                        throw new DataIntegrityViolationException("poison row 데이터 무결성 제약 위반");
                     }
                     int[] result = new int[params.length];
                     java.util.Arrays.fill(result, 1);

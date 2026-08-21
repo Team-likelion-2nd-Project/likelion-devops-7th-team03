@@ -17,8 +17,10 @@ import java.util.List;
  * K8s CronJob 진입점. "어제(KST) 하루치" 클릭 로그를 Athena로 집계해서
  * link_daily_stats / link_daily_dimension_stats에 UPSERT하고 종료한다.
  *
+ * OOM 방지를 위해 대량 쿼리 결과를 전체 List로 적재하지 않고,
+ * Athena SDK Paginator 기반 스트리밍(CHUNK_SIZE=1000)으로 처리합니다.
+ *
  * 실행: SPRING_PROFILES_ACTIVE=batch, SPRING_MAIN_WEB_APPLICATION_TYPE=none
- * (웹서버 안 띄우고 배치만 돌고 프로세스 종료 — CronJob 컨테이너는 완료돼야 함)
  */
 @Slf4j
 @Component
@@ -27,6 +29,7 @@ import java.util.List;
 public class AthenaBatchRunner implements CommandLineRunner {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+    private static final int CHUNK_SIZE = 1000;
 
     private final AthenaQueryExecutor queryExecutor;
     private final DailyStatsUpsertRepository dailyStatsRepository;
@@ -41,14 +44,13 @@ public class AthenaBatchRunner implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        // 인자로 날짜를 넘기면 그 날짜(KST) 기준으로 재집계, 없으면 어제(KST)
         LocalDate targetDate = args.length > 0
                 ? LocalDate.parse(args[0])
                 : LocalDate.now(KST).minusDays(1);
 
         final int exitCode = runBatch(targetDate);
 
-        // CommandLineRunner가 끝나도 Spring 컨텍스트가 살아있으면 Job이 안 끝난 것처럼 붙잡힌다.
+        // CommandLineRunner 종료 후 Spring 컨텍스트 정상 종료 및 Exit Code 반환
         System.exit(SpringApplication.exit(applicationContext, () -> exitCode));
     }
 
@@ -67,19 +69,35 @@ public class AthenaBatchRunner implements CommandLineRunner {
 
     private void runDailyStats(LocalDate targetDate) {
         String sql = AthenaQueries.dailyStats(targetDate);
-        List<DailyStatRow> rows = queryExecutor.execute(sql, workgroup, database, DailyStatRow::from);
-        dailyStatsRepository.upsertAll(rows);
-        log.info("link_daily_stats UPSERT 완료. rows={}", rows.size());
+
+        // 전체 List 대신 청크(1,000건) 단위 스트리밍 소비
+        long processedRows = queryExecutor.executeStreaming(
+                sql,
+                workgroup,
+                database,
+                CHUNK_SIZE,
+                DailyStatRow::from,
+                dailyStatsRepository::upsertAll
+        );
+
+        log.info("link_daily_stats UPSERT 완료. 총 처리 rows={}", processedRows);
     }
 
     private void runDimensionStats(LocalDate targetDate) {
         for (String dimensionType : List.of("REFERRER", "DEVICE", "REGION")) {
             String sql = AthenaQueries.dimensionStats(targetDate, dimensionType);
-            List<DimensionStatRow> rows = queryExecutor.execute(
-                    sql, workgroup, database, values -> DimensionStatRow.from(values, dimensionType));
-            dimensionStatsRepository.upsertAll(rows);
-            log.info("link_daily_dimension_stats UPSERT 완료. dimensionType={} rows={}",
-                    dimensionType, rows.size());
+
+            long processedRows = queryExecutor.executeStreaming(
+                    sql,
+                    workgroup,
+                    database,
+                    CHUNK_SIZE,
+                    values -> DimensionStatRow.from(values, dimensionType),
+                    dimensionStatsRepository::upsertAll
+            );
+
+            log.info("link_daily_dimension_stats UPSERT 완료. dimensionType={} 총 처리 rows={}",
+                    dimensionType, processedRows);
         }
     }
 

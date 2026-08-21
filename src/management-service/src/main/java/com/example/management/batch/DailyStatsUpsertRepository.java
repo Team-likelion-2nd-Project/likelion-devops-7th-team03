@@ -3,39 +3,25 @@ package com.example.management.batch;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * link_daily_stats에 대량 UPSERT. JPA save-if-not-exists는 링크 수만큼 2N 쿼리가
- * 나가므로(엔티티 주석 참고) 네이티브 INSERT ... ON DUPLICATE KEY UPDATE 배치로 처리한다.
+ * link_daily_stats 대량 UPSERT 저장소.
  *
- * rewriteBatchedStatements=true(JDBC URL)가 batchUpdate 전체를 하나의 거대한
- * 멀티밸류 INSERT 문자열로 rewrite하려고 시도하는데, 부하테스트 등으로 row 수가
- * 급증하면 rewrite 과정 자체가 heap을 다 잡아먹고 죽는다.
- * chunkSize 단위로 나눠서 배치 실행 자체를 여러 트랜잭션으로 쪼갠다.
- *
- * [재시도 정책] (DimensionStatsUpsertRepository와 동일한 패턴)
- * rewriteBatchedStatements=true 때문에 청크가 사실상 멀티밸류 INSERT 한 문장으로 합쳐져서,
- * 그 안 row 하나만 실패해도 몇 번째 row인지 JDBC가 안 알려주고 문 전체가 롤백된다
- * → 순수 row 단위 부분 재시도는 신뢰 불가. 그래서:
- *   1) 청크 전체를 최대 maxRetry회 지수 백오프로 재시도 (락 타임아웃, 커넥션 순단 등
- *      일시적 오류는 여기서 대부분 해결됨). UPSERT라 재시도해도 중복 반영 위험 없음(멱등적).
- *   2) 그래도 실패하면 청크를 반으로 쪼개 재귀적으로 재시도(bisect) → 문제 row만 좁혀서 격리
- *   3) bisectFloor 이하로 좁혀졌는데도 실패하면 그 row(들)는 dead-letter로 로그만
- *      남기고 skip (배치 전체를 죽이지 않음)
- *
- * [서킷 브레이커]
- * row 몇 개가 이상해서 실패하는 것과 DB 자체가 맛이 가서(커넥션 풀 고갈, DB 다운 등)
- * 실패하는 건 다르다. 후자인데 재시도/bisect만 있으면 남은 청크 전부 재시도+bisect
- * 하느라 잡이 끝도 없이 돈다. → 청크가 연속으로 N번 실패하면 시스템 문제로 판단하고
- * 배치 전체를 즉시 중단시킨다. 청크가 하나라도 성공하면 연속 카운트는 리셋.
+ * - rewriteBatchedStatements=true 설정 시 대량 쿼리 rewrite로 인한 Heap OOM 방지를 위해 chunkSize 단위 분할 실행.
+ * - TransactionTemplate을 사용하여 Self-Invocation 프록시 우회 없이 청크별 독립 트랜잭션 보장.
+ * - 지수 백오프 재시도 + bisect(이진 분할)를 통한 불량 데이터(dead-letter) 격리.
+ * - 시스템 레벨 연속 장애(DB 통신 단절, 커넥션 고갈 등) 감지 시 배치를 중단하는 서킷 브레이커 내장.
  */
 @Slf4j
 @Repository
@@ -50,9 +36,8 @@ public class DailyStatsUpsertRepository {
             """;
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
+    private final TransactionTemplate transactionTemplate;
 
-    // DimensionStatsUpsertRepository와 동일한 이유로 static final → 인스턴스 필드로 뺐다.
-    // 테스트에서 작은 값 + no-op Sleeper 주입해서 재시도/bisect/서킷브레이커를 빠르게 검증하기 위함.
     private final int chunkSize;
     private final int maxRetry;
     private final long baseBackoffMillis;
@@ -61,14 +46,22 @@ public class DailyStatsUpsertRepository {
     private final Sleeper sleeper;
 
     @Autowired
-    public DailyStatsUpsertRepository(NamedParameterJdbcTemplate jdbcTemplate) {
-        this(jdbcTemplate, 1000, 3, 500L, 5, 3, DEFAULT_SLEEPER);
+    public DailyStatsUpsertRepository(NamedParameterJdbcTemplate jdbcTemplate,
+                                      PlatformTransactionManager transactionManager) {
+        this(jdbcTemplate, new TransactionTemplate(transactionManager), 1000, 3, 500L, 5, 3, DEFAULT_SLEEPER);
     }
 
-    /** 테스트 전용 생성자. */
-    DailyStatsUpsertRepository(NamedParameterJdbcTemplate jdbcTemplate, int chunkSize, int maxRetry,
-                               long baseBackoffMillis, int bisectFloor, int circuitBreakerThreshold, Sleeper sleeper) {
+    /** 테스트 전용 생성자 */
+    DailyStatsUpsertRepository(NamedParameterJdbcTemplate jdbcTemplate,
+                               TransactionTemplate transactionTemplate,
+                               int chunkSize,
+                               int maxRetry,
+                               long baseBackoffMillis,
+                               int bisectFloor,
+                               int circuitBreakerThreshold,
+                               Sleeper sleeper) {
         this.jdbcTemplate = jdbcTemplate;
+        this.transactionTemplate = transactionTemplate;
         this.chunkSize = chunkSize;
         this.maxRetry = maxRetry;
         this.baseBackoffMillis = baseBackoffMillis;
@@ -86,21 +79,20 @@ public class DailyStatsUpsertRepository {
         }
     };
 
-    /** 재시도 백오프 대기를 추상화. 운영에선 진짜 sleep, 테스트에선 no-op으로 주입해서 빠르게 돌린다. */
     @FunctionalInterface
-    interface Sleeper {
+    public interface Sleeper {
         void sleep(long millis);
     }
 
     public void upsertAll(List<AthenaBatchRunner.DailyStatRow> rows) {
-        if (rows.isEmpty()) {
+        if (rows == null || rows.isEmpty()) {
             return;
         }
 
         int totalChunks = (rows.size() + chunkSize - 1) / chunkSize;
         int chunkIndex = 0;
         int failedRowCount = 0;
-        int consecutiveFailedChunks = 0;
+        int consecutiveSystemFailures = 0;
 
         for (int i = 0; i < rows.size(); i += chunkSize) {
             chunkIndex++;
@@ -109,26 +101,32 @@ public class DailyStatsUpsertRepository {
             log.info("[daily-stats-upsert] chunk {}/{} 시작. size={}", chunkIndex, totalChunks, chunk.size());
             long startedAt = System.currentTimeMillis();
 
-            List<AthenaBatchRunner.DailyStatRow> deadLetters = upsertWithRetry(chunk, chunkIndex, 1);
-            long elapsedMs = System.currentTimeMillis() - startedAt;
+            try {
+                List<AthenaBatchRunner.DailyStatRow> deadLetters = upsertWithRetryAndBisect(chunk, chunkIndex, 1);
+                long elapsedMs = System.currentTimeMillis() - startedAt;
 
-            if (deadLetters.isEmpty()) {
-                log.info("[daily-stats-upsert] chunk {}/{} 완료. size={}, elapsedMs={}, sample={}",
-                        chunkIndex, totalChunks, chunk.size(), elapsedMs, sampleRange(chunk));
-                consecutiveFailedChunks = 0;
-            } else {
-                failedRowCount += deadLetters.size();
-                consecutiveFailedChunks++;
-                log.error("[daily-stats-upsert] chunk {}/{} 일부 실패. size={}, deadLetters={}, rows={}, consecutiveFailedChunks={}",
-                        chunkIndex, totalChunks, chunk.size(), deadLetters.size(), summarize(deadLetters), consecutiveFailedChunks);
+                // 성공적으로 청크(또는 분할 청크)가 커밋되면 시스템 연속 장애 카운트 리셋
+                consecutiveSystemFailures = 0;
 
-                if (consecutiveFailedChunks >= circuitBreakerThreshold) {
-                    log.error("[daily-stats-upsert] 서킷 브레이커 작동: 청크 {}회 연속 실패 → 배치 중단. " +
-                                    "처리된 청크={}/{}, 지금까지 실패 row={}",
-                            consecutiveFailedChunks, chunkIndex, totalChunks, failedRowCount);
+                if (deadLetters.isEmpty()) {
+                    log.info("[daily-stats-upsert] chunk {}/{} 완료. size={}, elapsedMs={}, sample={}",
+                            chunkIndex, totalChunks, chunk.size(), elapsedMs, sampleRange(chunk));
+                } else {
+                    failedRowCount += deadLetters.size();
+                    log.error("[daily-stats-upsert] chunk {}/{} 일부 데이터 결함 격리. size={}, deadLetters={}, rows={}",
+                            chunkIndex, totalChunks, chunk.size(), deadLetters.size(), summarize(deadLetters));
+                }
+            } catch (SystemLevelBatchException e) {
+                consecutiveSystemFailures++;
+                log.error("[daily-stats-upsert] chunk {}/{} 시스템 레벨 장애 발생 (연속 {}회): {}",
+                        chunkIndex, totalChunks, consecutiveSystemFailures, e.getMessage());
+
+                if (consecutiveSystemFailures >= circuitBreakerThreshold) {
+                    log.error("[daily-stats-upsert] 서킷 브레이커 발동: 시스템 연속 장애 {}회 도달로 배치 즉시 중단. chunk={}/{}",
+                            consecutiveSystemFailures, chunkIndex, totalChunks);
                     throw new BatchCircuitBreakerException(
-                            "청크 " + consecutiveFailedChunks + "회 연속 실패로 배치 중단 (chunk "
-                                    + chunkIndex + "/" + totalChunks + ")");
+                            "시스템 연속 장애 " + consecutiveSystemFailures + "회 발생으로 배치 중단 (chunk "
+                                    + chunkIndex + "/" + totalChunks + ")", e);
                 }
             }
         }
@@ -138,39 +136,47 @@ public class DailyStatsUpsertRepository {
     }
 
     /**
-     * 청크를 최대 maxRetry회 재시도. 그래도 실패하면 bisect(반으로 쪼개서 재귀 재시도)로
-     * 문제 row를 좁혀나간다. 최종적으로 실패한(=dead-letter) row 목록을 반환한다.
+     * 청크를 최대 maxRetry회 재시도. 그래도 실패하면 bisect로 문제 row 격리.
+     * TransactionTemplate으로 청크/서브청크 단위의 독립 트랜잭션 실행.
      */
-    private List<AthenaBatchRunner.DailyStatRow> upsertWithRetry(
+    private List<AthenaBatchRunner.DailyStatRow> upsertWithRetryAndBisect(
             List<AthenaBatchRunner.DailyStatRow> chunk, int chunkIndex, int depth) {
+
+        DataAccessException lastException = null;
 
         for (int attempt = 1; attempt <= maxRetry; attempt++) {
             try {
-                upsertChunk(chunk);
+                // TransactionTemplate으로 감싸서 Self-invocation 프록시 우회 문제 해결
+                transactionTemplate.executeWithoutResult(status -> executeBatchUpsert(chunk));
+
                 if (attempt > 1) {
-                    log.warn("[daily-stats-upsert] chunk {} (depth={}) {}번째 시도에 성공. size={}",
+                    log.warn("[daily-stats-upsert] chunk {} (depth={}) {}번째 시도에 복구 성공. size={}",
                             chunkIndex, depth, attempt, chunk.size());
                 }
                 return List.of();
             } catch (DataAccessException e) {
+                lastException = e;
                 log.warn("[daily-stats-upsert] chunk {} (depth={}) {}번째 시도 실패. size={}, cause={}",
                         chunkIndex, depth, attempt, chunk.size(), e.getMessage());
 
-                if (attempt == maxRetry) {
-                    break;
+                if (attempt < maxRetry) {
+                    sleepBackoff(attempt);
                 }
-                sleepBackoff(attempt);
             }
         }
 
-        // maxRetry 다 실패 → bisect 시도
+        // maxRetry 소진 후 bisectFloor 도달 시 dead-letter 처리
         if (chunk.size() <= bisectFloor) {
-            log.error("[daily-stats-upsert] chunk {} (depth={}) bisectFloor({}) 이하로도 실패 → dead-letter 처리. size={}",
+            if (isSystemLevelException(lastException)) {
+                throw new SystemLevelBatchException("DB 시스템 장애로 인한 처리 불가", lastException);
+            }
+
+            log.error("[daily-stats-upsert] chunk {} (depth={}) bisectFloor({}) 도달 → dead-letter 확정. size={}",
                     chunkIndex, depth, bisectFloor, chunk.size());
             return chunk;
         }
 
-        log.warn("[daily-stats-upsert] chunk {} (depth={}) 재시도 소진 → bisect 진행. size={}",
+        log.warn("[daily-stats-upsert] chunk {} (depth={}) 재시도 소진 → bisect 분할 진행. size={}",
                 chunkIndex, depth, chunk.size());
 
         int mid = chunk.size() / 2;
@@ -178,30 +184,25 @@ public class DailyStatsUpsertRepository {
         List<AthenaBatchRunner.DailyStatRow> right = chunk.subList(mid, chunk.size());
 
         List<AthenaBatchRunner.DailyStatRow> deadLetters = new ArrayList<>();
-        deadLetters.addAll(upsertWithRetry(left, chunkIndex, depth + 1));
-        deadLetters.addAll(upsertWithRetry(right, chunkIndex, depth + 1));
+        deadLetters.addAll(upsertWithRetryAndBisect(left, chunkIndex, depth + 1));
+        deadLetters.addAll(upsertWithRetryAndBisect(right, chunkIndex, depth + 1));
         return deadLetters;
     }
 
-    private void sleepBackoff(int attempt) {
-        long backoffMs = baseBackoffMillis * (1L << (attempt - 1)); // 500ms, 1s, 2s...
-        sleeper.sleep(backoffMs);
-    }
-
-    @Transactional
-    protected void upsertChunk(List<AthenaBatchRunner.DailyStatRow> chunk) {
-        MapSqlParameterSource[] params = chunk.stream()
-                .map(row -> new MapSqlParameterSource()
-                        .addValue("linkId", row.linkId())
-                        .addValue("statDate", row.statDate())
-                        .addValue("clickCount", row.clickCount())
-                        .addValue("visitorCount", row.visitorCount()))
-                .toArray(MapSqlParameterSource[]::new);
+    private void executeBatchUpsert(List<AthenaBatchRunner.DailyStatRow> chunk) {
+        SqlParameterSource[] params = new SqlParameterSource[chunk.size()];
+        for (int i = 0; i < chunk.size(); i++) {
+            AthenaBatchRunner.DailyStatRow row = chunk.get(i);
+            params[i] = new MapSqlParameterSource()
+                    .addValue("linkId", row.linkId())
+                    .addValue("statDate", row.statDate())
+                    .addValue("clickCount", row.clickCount())
+                    .addValue("visitorCount", row.visitorCount());
+        }
 
         int[] updateCounts = jdbcTemplate.batchUpdate(UPSERT_SQL, params);
 
         if (log.isDebugEnabled()) {
-            // MySQL ON DUPLICATE KEY UPDATE 반환값 관례: 1=INSERT, 2=UPDATE(값 변경), 0=UPDATE(값 동일해서 변경 없음)
             int inserted = 0, updated = 0, unchanged = 0;
             for (int c : updateCounts) {
                 if (c == 1) inserted++;
@@ -213,7 +214,16 @@ public class DailyStatsUpsertRepository {
         }
     }
 
-    /** 성공 로그에 넣을 샘플 — 청크의 첫/마지막 row만 linkId|statDate로 */
+    private boolean isSystemLevelException(DataAccessException e) {
+        return e instanceof TransientDataAccessException
+                || (e.getMessage() != null && e.getMessage().contains("Connection"));
+    }
+
+    private void sleepBackoff(int attempt) {
+        long backoffMs = baseBackoffMillis * (1L << (attempt - 1));
+        sleeper.sleep(backoffMs);
+    }
+
     private String sampleRange(List<AthenaBatchRunner.DailyStatRow> chunk) {
         AthenaBatchRunner.DailyStatRow first = chunk.get(0);
         AthenaBatchRunner.DailyStatRow last = chunk.get(chunk.size() - 1);
@@ -221,7 +231,6 @@ public class DailyStatsUpsertRepository {
                 + ", last=" + last.linkId() + "|" + last.statDate();
     }
 
-    /** dead-letter 로그용 요약 (linkId|statDate 형태로 최대 20개만) */
     private String summarize(List<AthenaBatchRunner.DailyStatRow> rows) {
         return rows.stream()
                 .limit(20)
@@ -229,4 +238,9 @@ public class DailyStatsUpsertRepository {
                 .collect(Collectors.joining(", "));
     }
 
+    public static class SystemLevelBatchException extends RuntimeException {
+        public SystemLevelBatchException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
 }

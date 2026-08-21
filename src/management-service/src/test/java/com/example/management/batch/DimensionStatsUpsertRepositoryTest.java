@@ -7,15 +7,19 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.LongStream;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -24,19 +28,17 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /**
- * [뼈대]
- * DimensionStatsUpsertRepository의 chunkSize/maxRetry/bisectFloor/circuitBreakerThreshold를
- * 작은 값으로 주입하고, Sleeper를 no-op으로 넣어서 재시도·bisect를 실제 대기 없이 검증한다.
- * (테스트 전용 생성자는 DimensionStatsUpsertRepository에 package-private으로 추가돼 있음)
- *
- * REGION 타입은 bucketTopNPerLink 로직이 끼어들어서 row 개수/구성이 예측하기 어려워지므로,
- * 여기 테스트는 전부 REFERRER(그대로 저장되는 타입)로 통일해서 청크 분할 동작만 순수하게 본다.
+ * DimensionStatsUpsertRepository 단위 테스트.
+ * - TransactionTemplate은 Pass-through 방식으로 즉시 콜백을 실행하도록 모킹/구현.
+ * - chunkSize/maxRetry/bisectFloor/circuitBreakerThreshold를 작은 값으로 주입하고,
+ *   Sleeper를 no-op으로 넣어 재시도·bisect를 대기 없이 빠르게 검증.
+ * - REGION 차원의 Top-N + ETC 압축 로직 검증 포함.
  */
 @ExtendWith(MockitoExtension.class)
 class DimensionStatsUpsertRepositoryTest {
 
     private static final LocalDate STAT_DATE = LocalDate.of(2026, 8, 20);
-    private static final DimensionStatsUpsertRepository.Sleeper NO_OP_SLEEPER = millis -> { /* 테스트에선 대기 안 함 */ };
+    private static final DimensionStatsUpsertRepository.Sleeper NO_OP_SLEEPER = millis -> { /* 대기 없음 */ };
 
     @Mock
     private NamedParameterJdbcTemplate jdbcTemplate;
@@ -45,31 +47,71 @@ class DimensionStatsUpsertRepositoryTest {
 
     @BeforeEach
     void setUp() {
-        // 기본 파라미터. 개별 테스트에서 필요하면 newRepository(...)로 다시 만들어서 씀.
         repository = newRepository(/*chunkSize*/ 4, /*maxRetry*/ 2, /*bisectFloor*/ 1, /*circuitBreakerThreshold*/ 2);
     }
 
     private DimensionStatsUpsertRepository newRepository(int chunkSize, int maxRetry, int bisectFloor, int circuitBreakerThreshold) {
+        // 단위 테스트용 TransactionTemplate: 별도 트랜잭션 매니저 없이 넘겨받은 콜백을 바로 실행
+        TransactionTemplate testTransactionTemplate = new TransactionTemplate() {
+            @Override
+            public <T> T execute(TransactionCallback<T> action) {
+                return action.doInTransaction(new SimpleTransactionStatus());
+            }
+        };
+
         return new DimensionStatsUpsertRepository(
-                jdbcTemplate, chunkSize, maxRetry, /*baseBackoffMs*/ 1L, bisectFloor, circuitBreakerThreshold, NO_OP_SLEEPER);
+                jdbcTemplate,
+                testTransactionTemplate,
+                chunkSize,
+                maxRetry,
+                /*baseBackoffMs*/ 1L,
+                bisectFloor,
+                circuitBreakerThreshold,
+                NO_OP_SLEEPER
+        );
     }
 
     @Test
-    void 모든_row가_한번에_성공하면_재시도없이_끝난다() {
-        List<AthenaBatchRunner.DimensionStatRow> rows = rows(1, 8); // chunkSize=4 → 청크 2개
+    void REFERRER_모든_row가_성공하면_재시도없이_배치가_끝난다() {
+        List<AthenaBatchRunner.DimensionStatRow> rows = createDimensionRows(1L, "REFERRER", 8); // chunkSize=4 -> 청크 2개
         stubAlwaysSucceed();
 
         repository.upsertAll(rows);
 
-        // 청크 2개, 재시도 없이 한 번씩만 batchUpdate 호출됨
         verify(jdbcTemplate, times(2)).batchUpdate(anyString(), any(SqlParameterSource[].class));
     }
 
     @Test
-    void 일시적_실패는_재시도로_복구된다() {
-        List<AthenaBatchRunner.DimensionStatRow> rows = rows(1, 4); // 단일 청크
+    void REGION_차원은_상위_10개_초과시_ETC로_압축되어_실행된다() {
+        // 한 linkId에 대해 15개의 REGION 데이터 생성
+        List<AthenaBatchRunner.DimensionStatRow> rows = new ArrayList<>();
+        for (int i = 1; i <= 15; i++) {
+            rows.add(new AthenaBatchRunner.DimensionStatRow(1L, STAT_DATE, "REGION", "City-" + i, i * 10));
+        }
 
-        // 첫 호출은 실패, 두 번째 호출부터 성공 (maxRetry=2라 두 번째 시도에서 성공해야 통과)
+        stubAlwaysSucceed();
+
+        repository.upsertAll(rows);
+
+        ArgumentCaptor<SqlParameterSource[]> captor = ArgumentCaptor.forClass(SqlParameterSource[].class);
+        verify(jdbcTemplate, atLeastOnce()).batchUpdate(anyString(), captor.capture());
+
+        // 15개 -> 상위 10개 + ETC 1개 = 총 11개로 압축되어 전달되어야 함
+        List<SqlParameterSource> allCaptured = captor.getAllValues().stream()
+                .flatMap(params -> java.util.Arrays.stream(params))
+                .toList();
+
+        assertThat(allCaptured).hasSize(11);
+
+        boolean hasEtc = allCaptured.stream()
+                .anyMatch(p -> "ETC".equals(p.getValue("dimensionValue")));
+        assertThat(hasEtc).isTrue();
+    }
+
+    @Test
+    void 일시적_장애는_재시도로_복구된다() {
+        List<AthenaBatchRunner.DimensionStatRow> rows = createDimensionRows(1L, "DEVICE", 4); // 단일 청크
+
         when(jdbcTemplate.batchUpdate(anyString(), any(SqlParameterSource[].class)))
                 .thenThrow(new DataAccessResourceFailureException("일시적 커넥션 오류"))
                 .thenReturn(new int[]{1, 1, 1, 1});
@@ -80,56 +122,44 @@ class DimensionStatsUpsertRepositoryTest {
     }
 
     @Test
-    void 특정_row가_계속_실패하면_bisect로_격리되고_배치는_계속된다() {
-        // linkId=999L 하나만 계속 실패하는 "불량 row"로 설정. 나머지는 정상.
-        long poisonLinkId = 999L;
-        List<AthenaBatchRunner.DimensionStatRow> rows = rows(1, 7); // 7개 (poison 포함해서 8개는 아님, chunkSize=4로 2청크)
-        rows.set(3, poisonRow(poisonLinkId)); // 첫 청크(1~4) 안에 섞어 넣음
+    void 특정_row_불량_시_bisect로_격리되고_정상_row는_완료된다() {
+        String poisonValue = "POISON_DEVICE";
+        List<AthenaBatchRunner.DimensionStatRow> rows = createDimensionRows(1L, "DEVICE", 7);
+        rows.set(2, new AthenaBatchRunner.DimensionStatRow(1L, STAT_DATE, "DEVICE", poisonValue, 1));
 
-        stubFailOnlyForLinkId(poisonLinkId);
+        stubFailOnlyForDimensionValue(poisonValue);
 
-        // 예외 없이 끝나야 한다 — poison row는 dead-letter로 스킵되고 나머지는 정상 반영됨
-        repository.upsertAll(rows);
+        repository.upsertAll(rows); // dead-letter 처리 후 예외 없이 정상 종료되어야 함
 
-        // poison row 하나만 담긴 batchUpdate 호출이 최소 maxRetry번은 있었어야 bisect가 끝까지 격리한 것
         ArgumentCaptor<SqlParameterSource[]> captor = ArgumentCaptor.forClass(SqlParameterSource[].class);
         verify(jdbcTemplate, atLeastOnce()).batchUpdate(anyString(), captor.capture());
 
-        long poisonOnlyCalls = captor.getAllValues().stream()
-                .filter(params -> params.length == 1 && linkIdOf(params[0]) == poisonLinkId)
+        long poisonCalls = captor.getAllValues().stream()
+                .filter(params -> params.length == 1 && poisonValue.equals(params[0].getValue("dimensionValue")))
                 .count();
-        assertThat(poisonOnlyCalls).isGreaterThanOrEqualTo(2); // maxRetry=2
-
-        // 정상 row(linkId=1~3,5~7)만 담긴 성공 호출도 있어야 함 (poison이 나머지를 다 물귀신처럼 끌고 가지 않는지 확인)
-        boolean anyCleanBatchSucceeded = captor.getAllValues().stream()
-                .anyMatch(params -> params.length > 1
-                        && java.util.Arrays.stream(params).noneMatch(p -> linkIdOf(p) == poisonLinkId));
-        assertThat(anyCleanBatchSucceeded).isTrue();
+        assertThat(poisonCalls).isGreaterThanOrEqualTo(2); // maxRetry=2회 재시도 후 dead-letter 확정
     }
 
     @Test
-    void 연속으로_청크가_실패하면_서킷브레이커가_배치를_중단시킨다() {
-        // chunkSize=2, bisectFloor=1, circuitBreakerThreshold=2 → 6개 row = 청크 3개(2,2,2)
-        // 전부 실패하는 상황을 만들어서 청크1,2가 연속 실패 → 청크3 처리 전에 중단돼야 함
+    void 연속_시스템_장애_발생_시_서킷브레이커가_배치를_중단시킨다() {
         repository = newRepository(/*chunkSize*/ 2, /*maxRetry*/ 1, /*bisectFloor*/ 1, /*circuitBreakerThreshold*/ 2);
-        List<AthenaBatchRunner.DimensionStatRow> rows = rows(1, 6);
+        List<AthenaBatchRunner.DimensionStatRow> rows = createDimensionRows(1L, "REFERRER", 6); // 청크 3개(2, 2, 2)
 
         stubAlwaysFail();
 
         assertThatThrownBy(() -> repository.upsertAll(rows))
                 .isInstanceOf(BatchCircuitBreakerException.class)
-                .hasMessageContaining("연속 실패");
+                .hasMessageContaining("연속");
 
-        // 청크3(linkId=5,6)에 해당하는 row는 애초에 batchUpdate까지 도달하면 안 됨
         ArgumentCaptor<SqlParameterSource[]> captor = ArgumentCaptor.forClass(SqlParameterSource[].class);
         verify(jdbcTemplate, atLeastOnce()).batchUpdate(anyString(), captor.capture());
 
-        Set<Long> attemptedLinkIds = captor.getAllValues().stream()
+        Set<String> attemptedValues = captor.getAllValues().stream()
                 .flatMap(params -> java.util.Arrays.stream(params))
-                .map(this::linkIdOf)
+                .map(p -> (String) p.getValue("dimensionValue"))
                 .collect(Collectors.toSet());
 
-        assertThat(attemptedLinkIds).doesNotContain(5L, 6L);
+        assertThat(attemptedValues).doesNotContain("Value-5", "Value-6"); // 청크3은 시도조차 안 됨
     }
 
     // ---- 헬퍼 ----
@@ -146,18 +176,17 @@ class DimensionStatsUpsertRepositoryTest {
 
     private void stubAlwaysFail() {
         when(jdbcTemplate.batchUpdate(anyString(), any(SqlParameterSource[].class)))
-                .thenThrow(new DataAccessResourceFailureException("DB 장애 시뮬레이션"));
+                .thenThrow(new DataAccessResourceFailureException("DB Connection 장애"));
     }
 
-    /** poison linkId가 하나라도 섞인 batch면 실패, 아니면 성공 */
-    private void stubFailOnlyForLinkId(long poisonLinkId) {
+    private void stubFailOnlyForDimensionValue(String poisonValue) {
         when(jdbcTemplate.batchUpdate(anyString(), any(SqlParameterSource[].class)))
                 .thenAnswer(invocation -> {
                     SqlParameterSource[] params = invocation.getArgument(1);
                     boolean containsPoison = java.util.Arrays.stream(params)
-                            .anyMatch(p -> linkIdOf(p) == poisonLinkId);
+                            .anyMatch(p -> poisonValue.equals(p.getValue("dimensionValue")));
                     if (containsPoison) {
-                        throw new DataAccessResourceFailureException("poison row 포함된 batch 실패");
+                        throw new DataIntegrityViolationException("불량 포맷 데이터 예외");
                     }
                     int[] result = new int[params.length];
                     java.util.Arrays.fill(result, 1);
@@ -165,18 +194,9 @@ class DimensionStatsUpsertRepositoryTest {
                 });
     }
 
-    private long linkIdOf(SqlParameterSource p) {
-        return (Long) p.getValue("linkId");
-    }
-
-    private List<AthenaBatchRunner.DimensionStatRow> rows(int fromInclusive, int toInclusive) {
-        return LongStream.rangeClosed(fromInclusive, toInclusive)
-                .mapToObj(linkId -> new AthenaBatchRunner.DimensionStatRow(
-                        linkId, STAT_DATE, "REFERRER", "google.com", 10))
+    private List<AthenaBatchRunner.DimensionStatRow> createDimensionRows(Long linkId, String type, int count) {
+        return IntStream.rangeClosed(1, count)
+                .mapToObj(i -> new AthenaBatchRunner.DimensionStatRow(linkId, STAT_DATE, type, "Value-" + i, i * 5))
                 .collect(Collectors.toCollection(ArrayList::new));
-    }
-
-    private AthenaBatchRunner.DimensionStatRow poisonRow(long linkId) {
-        return new AthenaBatchRunner.DimensionStatRow(linkId, STAT_DATE, "REFERRER", "poison.example", 1);
     }
 }

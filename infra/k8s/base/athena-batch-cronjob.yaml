@@ -26,6 +26,10 @@ spec:
               env:
                 - name: SPRING_PROFILES_ACTIVE
                   value: batch
+                - name: JAVA_TOOL_OPTIONS
+                  # JVM 기본 heap(컨테이너 메모리의 25%)이 배치 upsert 부하를 못 버텨서 OOM 발생.
+                  # limit(1Gi) 대비 heap 비율을 올려서 OOM 방지.
+                  value: "-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
               envFrom:
                 - configMapRef: { name: management-service-config }
                 - secretRef: { name: management-service-secrets }

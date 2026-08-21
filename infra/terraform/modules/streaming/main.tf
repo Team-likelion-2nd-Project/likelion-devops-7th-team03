@@ -137,7 +137,7 @@ resource "aws_kinesis_firehose_delivery_stream" "click_events" {
 # Glue Data Catalog — Athena가 S3의 클릭 로그를 테이블로 인식하게 함
 # ══════════════════════════════════════════════════
 resource "aws_glue_catalog_database" "snipy" {
-  name = "snipy_click_logs"
+  name = var.glue_database_name != "" ? var.glue_database_name : "${var.cluster_name}_click_logs"
 }
 
 resource "aws_glue_catalog_table" "click_events" {

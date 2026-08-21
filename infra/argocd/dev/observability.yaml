@@ -22,10 +22,16 @@ spec:
             serviceMonitorSelectorNilUsesHelmValues: false
             serviceMonitorNamespaceSelector: {}
             enableRemoteWriteReceiver: true
+            # k6 부하테스트 대시보드(grafana.com 19665)가 histogram_quantile()로 latency를
+            # 조회해서 native histogram이 필요함 (load-test/job.yaml.template의
+            # K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM=true와 세트).
+            enableFeatures: ["native-histograms"]
             retention: 3d
+            # WAL replay 중 OOMKilled가 반복돼서(재시작마다 replay 시간이 늘어나는 악순환)
+            # 상향. dev도 prod와 동일한 값으로 맞춤.
             resources:
-              requests: { cpu: 100m, memory: 512Mi }
-              limits: { cpu: 500m, memory: 1Gi }
+              requests: { cpu: 250m, memory: 1Gi }
+              limits: { cpu: 1000m, memory: 2Gi }
             storageSpec:
               volumeClaimTemplate:
                 spec:
@@ -41,8 +47,8 @@ spec:
               enabled: true
               searchNamespace: ALL
           resources:
-            requests: { cpu: 200m, memory: 256Mi }
-            limits: { cpu: 500m, memory: 512Mi }
+            requests: { cpu: 250m, memory: 1Gi }
+            limits: { cpu: 500m, memory: 2Gi }
           persistence:
             enabled: true
             storageClassName: gp3

@@ -9,3 +9,4 @@ resources:
 patches:
   - path: patch-athena-configmap.yaml
   - path: patch-athena-sa.yaml
+  - path: patch-ingress.yaml

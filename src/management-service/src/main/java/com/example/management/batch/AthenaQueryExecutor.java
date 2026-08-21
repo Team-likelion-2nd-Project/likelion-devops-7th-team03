@@ -19,6 +19,9 @@ import java.util.function.Function;
 @RequiredArgsConstructor
 public class AthenaQueryExecutor {
 
+    private static final int MAX_POLL_ATTEMPTS = 150; // 2초 간격 x 150회 = 최대 5분 폴링 대기
+    private static final long POLL_INTERVAL_MS = 2000L;
+
     private final AthenaClient athenaClient;
 
     /**
@@ -69,7 +72,7 @@ public class AthenaQueryExecutor {
                 .queryExecutionId(queryExecutionId)
                 .build();
 
-        while (true) {
+        for (int attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++) {
             GetQueryExecutionResponse response = athenaClient.getQueryExecution(request);
             QueryExecutionStatus status = response.queryExecution().status();
             QueryExecutionState state = status.state();
@@ -82,12 +85,16 @@ public class AthenaQueryExecutor {
             }
 
             try {
-                Thread.sleep(1000L); // 1초 대기
+                Thread.sleep(POLL_INTERVAL_MS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("Athena 쿼리 대기 중 인터럽트 발생", e);
             }
         }
+
+        // 최대 폴링 횟수 초과 시 무한 대기 방지
+        throw new IllegalStateException(
+                "Athena 쿼리 대기 시간 초과 (최대 " + (MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000) + "초 초과). executionId=" + queryExecutionId);
     }
 
     private <T> long streamResults(
@@ -113,7 +120,6 @@ public class AthenaQueryExecutor {
                     isFirstRow = false;
                     continue; // 헤더 스킵
                 }
-
                 // Athena Row -> List<String> 변환
                 List<String> values = row.data().stream()
                         .map(Datum::varCharValue)
@@ -121,18 +127,16 @@ public class AthenaQueryExecutor {
 
                 buffer.add(rowMapper.apply(values));
                 totalProcessedRows++;
-
                 // 버퍼가 청크 크기에 도달하면 즉시 처리 후 비움 -> Heap 메모리 안정화
                 if (buffer.size() >= chunkSize) {
-                    chunkConsumer.accept(buffer);
-                    buffer.clear(); // GC 대상 전환
+                    chunkConsumer.accept(new ArrayList<>(buffer));
+                    buffer.clear(); //GC 대상 전환
                 }
             }
         }
-
         // 남아있는 마지막 자투리 청크 처리
         if (!buffer.isEmpty()) {
-            chunkConsumer.accept(buffer);
+            chunkConsumer.accept(new ArrayList<>(buffer));
             buffer.clear();
         }
 

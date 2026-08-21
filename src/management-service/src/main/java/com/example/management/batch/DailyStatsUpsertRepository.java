@@ -3,8 +3,8 @@ package com.example.management.batch;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
-import org.springframework.dao.DataAccessException;
-import org.springframework.dao.TransientDataAccessException;
+import org.springframework.dao.*;
+import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
@@ -107,7 +107,6 @@ public class DailyStatsUpsertRepository {
             try {
                 List<AthenaBatchRunner.DailyStatRow> deadLetters = upsertWithRetryAndBisect(chunk, chunkIndex, 1);
                 long elapsedMs = System.currentTimeMillis() - startedAt;
-
                 // 부분 실패(일부 dead-letter 격리)라도 청크 처리가 완료되었으면 시스템 장애 카운트는 리셋
                 consecutiveSystemFailures = 0;
 
@@ -116,13 +115,13 @@ public class DailyStatsUpsertRepository {
                             chunkIndex, totalChunks, chunk.size(), elapsedMs, sampleRange(chunk));
                 } else {
                     failedRowCount += deadLetters.size();
-                    log.error("[daily-stats-upsert] chunk {}/{} 일부 데이터 결함 격리(부분실패). size={}, deadLetters={}, rows={}",
+                    log.error("[daily-stats-upsert] chunk {}/{} 일부 데이터 결함 격리. size={}, deadLetters={}, rows={}",
                             chunkIndex, totalChunks, chunk.size(), deadLetters.size(), summarize(deadLetters));
                 }
             } catch (SystemLevelBatchException e) {
                 // DB 다운/커넥션 고갈 등 완전 실패 시에만 서킷 브레이커 카운트 증가
                 consecutiveSystemFailures++;
-                log.error("[daily-stats-upsert] chunk {}/{} 시스템 완전 실패 발생 (연속 {}회): {}",
+                log.error("[daily-stats-upsert] chunk {}/{} DB 시스템 장애 발생 (연속 {}회): {}",
                         chunkIndex, totalChunks, consecutiveSystemFailures, e.getMessage());
 
                 if (consecutiveSystemFailures >= circuitBreakerThreshold) {
@@ -165,18 +164,18 @@ public class DailyStatsUpsertRepository {
             }
         }
 
-        // bisectFloor(1) 도달 시 진짜 문제 row만 dead-letter 확정
-        if (chunk.size() <= bisectFloor) {
-            if (isSystemLevelException(lastException)) {
-                throw new SystemLevelBatchException("DB 시스템 장애로 인한 완전 실패", lastException);
-            }
+        // 시스템 레벨 장애는 bisect 하지 않고 즉시 상위로 던져 서킷 브레이커 카운트 누적
+        if (isSystemLevelException(lastException)) {
+            throw new SystemLevelBatchException("DB 시스템 장애(커넥션/다운/락타임아웃)로 인한 처리 불가", lastException);
+        }
 
-            log.error("[daily-stats-upsert] chunk {} (depth={}) bisectFloor({}) 도달 → 불량 데이터 단건 dead-letter 격리. row={}",
-                    chunkIndex, depth, bisectFloor, summarize(chunk));
+        if (chunk.size() <= bisectFloor) {
+            log.error("[daily-stats-upsert] chunk {} (depth={}) bisectFloor({}) 도달 → dead-letter 확정. size={}",
+                    chunkIndex, depth, bisectFloor, chunk.size());
             return chunk;
         }
 
-        log.warn("[daily-stats-upsert] chunk {} (depth={}) 재시도 소진 → bisect 이진 분할 진행. size={}",
+        log.warn("[daily-stats-upsert] chunk {} (depth={}) 데이터 결함 격리를 위한 bisect 진행. size={}",
                 chunkIndex, depth, chunk.size());
 
         int mid = chunk.size() / 2;
@@ -200,23 +199,24 @@ public class DailyStatsUpsertRepository {
                     .addValue("visitorCount", row.visitorCount());
         }
 
-        int[] updateCounts = jdbcTemplate.batchUpdate(UPSERT_SQL, params);
-
-        if (log.isDebugEnabled()) {
-            int inserted = 0, updated = 0, unchanged = 0;
-            for (int c : updateCounts) {
-                if (c == 1) inserted++;
-                else if (c == 2) updated++;
-                else unchanged++;
-            }
-            log.debug("[daily-stats-upsert] batchUpdate 완료: inserted={}, updated={}, unchanged={}",
-                    inserted, updated, unchanged);
-        }
+        jdbcTemplate.batchUpdate(UPSERT_SQL, params);
     }
 
+    /**
+     * Spring DataAccessException 계층 구조 완벽 대응:
+     * - DataAccessResourceFailureException (NonTransientDataAccessException 하위, 커넥션 풀 고갈/연결 실패)
+     * - CannotGetJdbcConnectionException (JDBC 연결 불가)
+     * - TransientDataAccessException (일시적 락, 네트워크 순단)
+     * - CannotAcquireLockException, PessimisticLockingFailureException, QueryTimeoutException
+     */
     private boolean isSystemLevelException(DataAccessException e) {
-        return e instanceof TransientDataAccessException
-                || (e.getMessage() != null && e.getMessage().contains("Connection"));
+        if (e == null) return false;
+        return e instanceof DataAccessResourceFailureException
+                || e instanceof CannotGetJdbcConnectionException
+                || e instanceof TransientDataAccessException
+                || e instanceof CannotAcquireLockException
+                || e instanceof PessimisticLockingFailureException
+                || e instanceof QueryTimeoutException;
     }
 
     private void sleepBackoff(int attempt) {

@@ -21,6 +21,11 @@ import java.util.List;
  * Athena SDK Paginator 기반 스트리밍(CHUNK_SIZE=1000)으로 처리합니다.
  *
  * 실행: SPRING_PROFILES_ACTIVE=batch, SPRING_MAIN_WEB_APPLICATION_TYPE=none
+ *
+ * [종료 코드 (Exit Code) 규격]
+ *  - 0: 정상 완료 (Success)
+ *  - 1: 일반 예외 / 쿼리 실패 / 데이터 처리 실패 (General Error)
+ *  - 2: DB 시스템 장애 및 서킷 브레이커 발동 중단 (Circuit Breaker / Fatal System Error)
  */
 @Slf4j
 @Component
@@ -30,6 +35,10 @@ public class AthenaBatchRunner implements CommandLineRunner {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final int CHUNK_SIZE = 1000;
+
+    public static final int EXIT_SUCCESS = 0;
+    public static final int EXIT_GENERAL_ERROR = 1;
+    public static final int EXIT_CIRCUIT_BREAKER = 2;
 
     private final AthenaQueryExecutor queryExecutor;
     private final DailyStatsUpsertRepository dailyStatsRepository;
@@ -50,7 +59,7 @@ public class AthenaBatchRunner implements CommandLineRunner {
 
         final int exitCode = runBatch(targetDate);
 
-        // CommandLineRunner 종료 후 Spring 컨텍스트 정상 종료 및 Exit Code 반환
+        // 명시적 exitCode 반환으로 K8s Pod 상태 및 모니터링 알림 연동
         System.exit(SpringApplication.exit(applicationContext, () -> exitCode));
     }
 
@@ -60,16 +69,20 @@ public class AthenaBatchRunner implements CommandLineRunner {
             runDailyStats(targetDate);
             runDimensionStats(targetDate);
             log.info("Athena 배치 완료. targetDate(KST)={}", targetDate);
-            return 0;
+            return EXIT_SUCCESS;
+        } catch (BatchCircuitBreakerException e) {
+            // [CRITICAL] DB 전면 장애로 인한 서킷 브레이커 발동 -> Exit Code 2 반환
+            log.error("[ALERT-CRITICAL] DB 시스템 장애로 서킷 브레이커 발동! 배치 강제 중단. targetDate(KST)={}", targetDate, e);
+            return EXIT_CIRCUIT_BREAKER;
         } catch (Exception e) {
-            log.error("Athena 배치 실패. targetDate(KST)={}", targetDate, e);
-            return 1;
+            // [ERROR] 일반 쿼리 오류, 파싱 오류 등 -> Exit Code 1 반환
+            log.error("[ALERT-ERROR] Athena 배치 처리 실패. targetDate(KST)={}", targetDate, e);
+            return EXIT_GENERAL_ERROR;
         }
     }
 
     private void runDailyStats(LocalDate targetDate) {
         String sql = AthenaQueries.dailyStats(targetDate);
-
         // 전체 List 대신 청크(1,000건) 단위 스트리밍 소비
         long processedRows = queryExecutor.executeStreaming(
                 sql,
@@ -100,8 +113,7 @@ public class AthenaBatchRunner implements CommandLineRunner {
                     dimensionType, processedRows);
         }
     }
-
-    /** Athena 결과 한 행 (link_daily_stats용) */
+    /** Athena 결과 한 행 (link_daily_dimension_stats용) */
     public record DailyStatRow(Long linkId, LocalDate statDate, int clickCount, int visitorCount) {
         static DailyStatRow from(List<String> values) {
             return new DailyStatRow(
@@ -112,7 +124,6 @@ public class AthenaBatchRunner implements CommandLineRunner {
             );
         }
     }
-
     /** Athena 결과 한 행 (link_daily_dimension_stats용) */
     public record DimensionStatRow(
             Long linkId, LocalDate statDate, String dimensionType, String dimensionValue, int clickCount) {

@@ -8,4 +8,4 @@ kind: CronJob
 metadata:
   name: athena-batch
 spec:
-  schedule: "0 17 * * *"
+  schedule: "0 * * * *"

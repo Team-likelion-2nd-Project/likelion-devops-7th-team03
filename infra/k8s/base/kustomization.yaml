@@ -23,4 +23,4 @@ images:
   newTag: 791f88936458388d22f563951d1804ba8294c9b0
 - name: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/redirect-service
   newName: 834922934330.dkr.ecr.ap-southeast-1.amazonaws.com/redirect-service
-  newTag: 791f88936458388d22f563951d1804ba8294c9b0
+  newTag: 018497235fbd55cff35021568075e4c31384d61a

@@ -2,6 +2,7 @@ package com.example.management.batch;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.TransientDataAccessException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -18,13 +19,14 @@ import java.util.stream.Collectors;
 /**
  * link_daily_stats 대량 UPSERT 저장소.
  *
- * - rewriteBatchedStatements=true 설정 시 대량 쿼리 rewrite로 인한 Heap OOM 방지를 위해 chunkSize 단위 분할 실행.
- * - TransactionTemplate을 사용하여 Self-Invocation 프록시 우회 없이 청크별 독립 트랜잭션 보장.
- * - 지수 백오프 재시도 + bisect(이진 분할)를 통한 불량 데이터(dead-letter) 격리.
- * - 시스템 레벨 연속 장애(DB 통신 단절, 커넥션 고갈 등) 감지 시 배치를 중단하는 서킷 브레이커 내장.
+ * - @Profile("batch"): 웹 서버 기동 시 불필요한 빈 로딩을 막고 배치 전용 컨텍스트에서만 동작.
+ * - TransactionTemplate: upsertAll() 전체 트랜잭션 대신 청크/bisect 단위 독립 트랜잭션 보장 (Self-Invocation 문제 해결).
+ * - bisectFloor=1: 불량 데이터 발견 시 1건 단위까지 끝까지 쪼개어 정상 데이터 유실을 0으로 방지.
+ * - 서킷 브레이커: dead-letter(부분 실패)가 아닌 DB 시스템 연속 장애(완전 실패) 시에만 카운트 증가.
  */
 @Slf4j
 @Repository
+@Profile("batch")
 public class DailyStatsUpsertRepository {
 
     private static final String UPSERT_SQL = """
@@ -48,7 +50,8 @@ public class DailyStatsUpsertRepository {
     @Autowired
     public DailyStatsUpsertRepository(NamedParameterJdbcTemplate jdbcTemplate,
                                       PlatformTransactionManager transactionManager) {
-        this(jdbcTemplate, new TransactionTemplate(transactionManager), 1000, 3, 500L, 5, 3, DEFAULT_SLEEPER);
+        // bisectFloor 기본값을 5 -> 1로 설정하여 정상 row가 함께 dead-letter로 버려지는 문제 해결
+        this(jdbcTemplate, new TransactionTemplate(transactionManager), 1000, 3, 500L, 1, 3, DEFAULT_SLEEPER);
     }
 
     /** 테스트 전용 생성자 */
@@ -92,7 +95,7 @@ public class DailyStatsUpsertRepository {
         int totalChunks = (rows.size() + chunkSize - 1) / chunkSize;
         int chunkIndex = 0;
         int failedRowCount = 0;
-        int consecutiveSystemFailures = 0;
+        int consecutiveSystemFailures = 0; // 완전 실패(시스템 장애) 연속 횟수
 
         for (int i = 0; i < rows.size(); i += chunkSize) {
             chunkIndex++;
@@ -105,7 +108,7 @@ public class DailyStatsUpsertRepository {
                 List<AthenaBatchRunner.DailyStatRow> deadLetters = upsertWithRetryAndBisect(chunk, chunkIndex, 1);
                 long elapsedMs = System.currentTimeMillis() - startedAt;
 
-                // 성공적으로 청크(또는 분할 청크)가 커밋되면 시스템 연속 장애 카운트 리셋
+                // 부분 실패(일부 dead-letter 격리)라도 청크 처리가 완료되었으면 시스템 장애 카운트는 리셋
                 consecutiveSystemFailures = 0;
 
                 if (deadLetters.isEmpty()) {
@@ -113,12 +116,13 @@ public class DailyStatsUpsertRepository {
                             chunkIndex, totalChunks, chunk.size(), elapsedMs, sampleRange(chunk));
                 } else {
                     failedRowCount += deadLetters.size();
-                    log.error("[daily-stats-upsert] chunk {}/{} 일부 데이터 결함 격리. size={}, deadLetters={}, rows={}",
+                    log.error("[daily-stats-upsert] chunk {}/{} 일부 데이터 결함 격리(부분실패). size={}, deadLetters={}, rows={}",
                             chunkIndex, totalChunks, chunk.size(), deadLetters.size(), summarize(deadLetters));
                 }
             } catch (SystemLevelBatchException e) {
+                // DB 다운/커넥션 고갈 등 완전 실패 시에만 서킷 브레이커 카운트 증가
                 consecutiveSystemFailures++;
-                log.error("[daily-stats-upsert] chunk {}/{} 시스템 레벨 장애 발생 (연속 {}회): {}",
+                log.error("[daily-stats-upsert] chunk {}/{} 시스템 완전 실패 발생 (연속 {}회): {}",
                         chunkIndex, totalChunks, consecutiveSystemFailures, e.getMessage());
 
                 if (consecutiveSystemFailures >= circuitBreakerThreshold) {
@@ -135,10 +139,6 @@ public class DailyStatsUpsertRepository {
                 rows.size(), chunkSize, failedRowCount);
     }
 
-    /**
-     * 청크를 최대 maxRetry회 재시도. 그래도 실패하면 bisect로 문제 row 격리.
-     * TransactionTemplate으로 청크/서브청크 단위의 독립 트랜잭션 실행.
-     */
     private List<AthenaBatchRunner.DailyStatRow> upsertWithRetryAndBisect(
             List<AthenaBatchRunner.DailyStatRow> chunk, int chunkIndex, int depth) {
 
@@ -146,7 +146,7 @@ public class DailyStatsUpsertRepository {
 
         for (int attempt = 1; attempt <= maxRetry; attempt++) {
             try {
-                // TransactionTemplate으로 감싸서 Self-invocation 프록시 우회 문제 해결
+                // 청크/서브청크 단위 독립 트랜잭션 실행
                 transactionTemplate.executeWithoutResult(status -> executeBatchUpsert(chunk));
 
                 if (attempt > 1) {
@@ -165,18 +165,18 @@ public class DailyStatsUpsertRepository {
             }
         }
 
-        // maxRetry 소진 후 bisectFloor 도달 시 dead-letter 처리
+        // bisectFloor(1) 도달 시 진짜 문제 row만 dead-letter 확정
         if (chunk.size() <= bisectFloor) {
             if (isSystemLevelException(lastException)) {
-                throw new SystemLevelBatchException("DB 시스템 장애로 인한 처리 불가", lastException);
+                throw new SystemLevelBatchException("DB 시스템 장애로 인한 완전 실패", lastException);
             }
 
-            log.error("[daily-stats-upsert] chunk {} (depth={}) bisectFloor({}) 도달 → dead-letter 확정. size={}",
-                    chunkIndex, depth, bisectFloor, chunk.size());
+            log.error("[daily-stats-upsert] chunk {} (depth={}) bisectFloor({}) 도달 → 불량 데이터 단건 dead-letter 격리. row={}",
+                    chunkIndex, depth, bisectFloor, summarize(chunk));
             return chunk;
         }
 
-        log.warn("[daily-stats-upsert] chunk {} (depth={}) 재시도 소진 → bisect 분할 진행. size={}",
+        log.warn("[daily-stats-upsert] chunk {} (depth={}) 재시도 소진 → bisect 이진 분할 진행. size={}",
                 chunkIndex, depth, chunk.size());
 
         int mid = chunk.size() / 2;
@@ -209,7 +209,7 @@ public class DailyStatsUpsertRepository {
                 else if (c == 2) updated++;
                 else unchanged++;
             }
-            log.debug("[daily-stats-upsert] batchUpdate 결과: inserted={}, updated={}, unchanged={}",
+            log.debug("[daily-stats-upsert] batchUpdate 완료: inserted={}, updated={}, unchanged={}",
                     inserted, updated, unchanged);
         }
     }

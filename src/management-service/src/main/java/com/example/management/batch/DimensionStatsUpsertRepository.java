@@ -2,6 +2,7 @@ package com.example.management.batch;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.TransientDataAccessException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -20,13 +21,13 @@ import java.util.stream.Collectors;
 /**
  * link_daily_dimension_stats UPSERT 저장소.
  *
- * - REGION은 링크·일자별 상위 TOP_N개만 남기고 나머지는 클릭수를 합산해 'ETC' 한 행으로 압축.
- * - TransactionTemplate을 사용하여 Self-Invocation 프록시 우회 없이 청크별 독립 트랜잭션 보장.
- * - 지수 백오프 재시도 + bisect(이진 분할)를 통한 불량 데이터(dead-letter) 격리.
- * - 시스템 레벨 연속 장애(DB 통신 단절, 커넥션 풀 고갈 등) 감지 시 배치를 중단하는 서킷 브레이커 내장.
+ * - @Profile("batch"): 배치 프로필에서만 빈 등록.
+ * - bisectFloor=1: 문제 row 단건만 격리하여 정상 row 유실 방지.
+ * - TransactionTemplate: 청크 단위 독립 트랜잭션 관리.
  */
 @Slf4j
 @Repository
+@Profile("batch")
 public class DimensionStatsUpsertRepository {
 
     private static final int REGION_TOP_N = 10;
@@ -53,7 +54,8 @@ public class DimensionStatsUpsertRepository {
     @Autowired
     public DimensionStatsUpsertRepository(NamedParameterJdbcTemplate jdbcTemplate,
                                           PlatformTransactionManager transactionManager) {
-        this(jdbcTemplate, new TransactionTemplate(transactionManager), 1000, 3, 200L, 5, 3, DEFAULT_SLEEPER);
+        // bisectFloor를 1로 변경
+        this(jdbcTemplate, new TransactionTemplate(transactionManager), 1000, 3, 200L, 1, 3, DEFAULT_SLEEPER);
     }
 
     /** 테스트 전용 생성자 */
@@ -128,7 +130,7 @@ public class DimensionStatsUpsertRepository {
                 }
             } catch (SystemLevelBatchException e) {
                 consecutiveSystemFailures++;
-                log.error("[dimension-upsert] chunk {}/{} 시스템 장애 발생 (연속 {}회): {}",
+                log.error("[dimension-upsert] chunk {}/{} 시스템 완전 실패 발생 (연속 {}회): {}",
                         chunkIndex, totalChunks, consecutiveSystemFailures, e.getMessage());
 
                 if (consecutiveSystemFailures >= circuitBreakerThreshold) {
@@ -145,10 +147,6 @@ public class DimensionStatsUpsertRepository {
                 rows.get(0).dimensionType(), rows.size(), effectiveRows.size(), chunkSize, failedRowCount);
     }
 
-    /**
-     * 청크 단위 재시도 및 bisect 처리.
-     * TransactionTemplate으로 청크/서브청크 단위의 독립 트랜잭션 실행.
-     */
     private List<AthenaBatchRunner.DimensionStatRow> upsertWithRetryAndBisect(
             List<AthenaBatchRunner.DimensionStatRow> chunk, int chunkIndex, int depth) {
 
@@ -179,8 +177,8 @@ public class DimensionStatsUpsertRepository {
                 throw new SystemLevelBatchException("DB 시스템 장애로 인한 처리 불가", lastException);
             }
 
-            log.error("[dimension-upsert] chunk {} (depth={}) bisectFloor({}) 도달 → dead-letter 확정. size={}",
-                    chunkIndex, depth, bisectFloor, chunk.size());
+            log.error("[dimension-upsert] chunk {} (depth={}) bisectFloor({}) 도달 → 불량 데이터 단건 dead-letter 격리. row={}",
+                    chunkIndex, depth, bisectFloor, summarize(chunk));
             return chunk;
         }
 

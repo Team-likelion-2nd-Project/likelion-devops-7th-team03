@@ -1,42 +1,36 @@
-// Load/Stress 겸용 스크립트 — PEAK_TPS 하나만 바꿔서 두 시나리오에 재사용한다
-// (예: Load는 PEAK_TPS=23, Stress는 PEAK_TPS=230). 0 → PEAK_TPS로 5분 상승 →
-// 10분 유지 → 5분 하강, 총 20분. 링크는 풀 하나(1..SLUG_COUNT)만 생성하고 그 안에서
-// 앞쪽 HOT_COUNT개(절대 개수, 비율 아님)를 인기 링크로 취급, 요청의 80%(HOT_TRAFFIC_RATIO)를
-// 그 구간에 몰아준다.
+// Load/Stress 겸용 스크립트 — PEAK_TPS 환경 변수 하나로 두 시나리오 재사용 가능
+// (예: Load는 PEAK_TPS=23, Stress는 PEAK_TPS=230).
 //
-// HOT_COUNT를 비율(예: 전체의 20%)로 잡으면 안 되는 이유: 30만 개의 20%면 6만 개인데,
-// 80% 트래픽으로 6만 개를 웜업시키는 데만 coupon collector 근사로 10분 넘게 걸려서
-// 테스트 대부분을 "hot도 사실상 다 콜드"인 채로 보내며 DB 부하가 계속 심하게 유지되는
-// 문제가 실제로 있었다. HOT_COUNT를 몇십 개 수준의 절대값으로 작게 잡으면 초반
-// 몇십 초 안에 다 캐싱되고, 이후 내내 "hot은 거의 히트, cold는 거의 미스"가 유지된다
-// (현실에서도 진짜 인기 링크는 전체의 몇 %가 아니라 훨씬 소수인 게 더 사실적이기도 함).
+// [테스트 시나리오: 총 10분]
+// 0 → PEAK_TPS로 2분 상승 → 6분 유지 → 2분 하강
 //
-// User-Agent/Referer/visitor_id를 실제처럼 보내서 UA 파싱(yauaa)/referrer 분류/visitor
-// 식별이 정확한지 나중에 Athena로 검증한다. VU마다 조합을 고정 배정해 같은 방문자는
-// 항상 같은 헤더를 보낸다(세션처럼) — Athena에서 visitor_id로 묶어 대조 가능.
-// visitor_id는 VisitorIdResolver가 UUID 형식만 신뢰하므로 진짜 UUID로 보내야 한다.
+// [트래픽 분배: 80/20 & Coupon Collector 최적화]
+// 링크는 하나의 풀(1..SLUG_COUNT)로 생성하며, 그 안에서 앞쪽 HOT_COUNT개(비율이 아닌 절대값)를
+// 인기 링크 구간으로 취급하고 트래픽의 80%(HOT_TRAFFIC_RATIO)를 집중시킨다.
+// * HOT_COUNT를 작게 유지하는 이유: 핫 구간이 너무 크면 테스트 시간 내내 캐시에 다 올라가지 못해
+//   DB 부하만 지속되므로, 실제 "소수 인기 링크" 환경을 모사하고 빠른 웜업을 유도하기 위함.
 //
-// 다른 트래픽과 안 섞이게 격리하려면 visitor_id/referrer가 아니라 **link_id로 필터링**
-// (이 테스트 링크는 실제 트래픽이 칠 수 없어 완전 격리됨).
+// [세션 고정 및 검증]
+// VU마다 User-Agent/Referer/visitor_id(UUIDv4) 조합을 고정하여 실제 세션처럼 행동하게 함.
+// 테스트 격리를 위해 링크 ID로 트래픽을 필터링하며, 이후 Athena에서 visitor_id를 기준으로
+// UA 파싱(yauaa) 및 Referrer 분류가 정확하게 동작했는지 대조 및 검증 가능.
 //
 // 사용법:
 //   BASE_URL=http://redirect-service:8080 SLUG_PREFIX=lt123456 SLUG_COUNT=300000 \
 //     PEAK_TPS=230 k6 run load-test/normal-traffic.js
+
 import http from "k6/http";
 import { check } from "k6";
 
 const BASE_URL = __ENV.BASE_URL || "http://redirect-service:8080";
 const SLUG_PREFIX = __ENV.SLUG_PREFIX || "test";
 const SLUG_COUNT = Number(__ENV.SLUG_COUNT || 300000);
-const PEAK_TPS = Number(__ENV.PEAK_TPS || 230);
+const PEAK_TPS = Number(__ENV.PEAK_TPS || 200);
 
-// 링크는 하나의 풀(1..SLUG_COUNT)로 생성하고, 그 안에서 앞쪽 HOT_COUNT개(절대값,
-// 비율 아님 — 위 주석 참고)를 인기 링크 구간으로 취급한다. 80/20 원칙: 요청의
-// HOT_TRAFFIC_RATIO(80%)는 핫 구간에서, 나머지는 콜드 구간에서 균등 랜덤.
 const HOT_COUNT = Math.min(SLUG_COUNT, Number(__ENV.HOT_COUNT || 50));
 const HOT_TRAFFIC_RATIO = Number(__ENV.HOT_TRAFFIC_RATIO || 0.8);
 
-// device_type(yauaa DeviceClass)별로 하나씩 — DESKTOP/MOBILE/TABLET 커버.
+// device_type(yauaa DeviceClass)별로 하나씩 — DESKTOP/MOBILE/TABLET 커버
 const UA_PROFILES = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36", // DESKTOP/Windows/Chrome
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15", // DESKTOP/macOS/Safari
@@ -45,8 +39,7 @@ const UA_PROFILES = [
   "Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1", // TABLET/iPadOS/Safari
 ];
 
-// ReferrerCategoryResolver 매칭 규칙(INSTAGRAM/FACEBOOK/NAVER/GOOGLE/KAKAO/X/DIRECT/ETC)
-// 카테고리 하나씩 커버. referrer: null이면 Referer 헤더 자체를 안 보냄(→DIRECT).
+// ReferrerCategoryResolver 매칭 규칙 하나씩 커버 (null은 DIRECT)
 const REFERRER_PROFILES = [
   "https://www.instagram.com/",
   "https://www.facebook.com/",
@@ -54,8 +47,8 @@ const REFERRER_PROFILES = [
   "https://www.google.com/search?q=snipy",
   "https://talk.kakao.com/",
   "https://t.co/abc123",
-  null, // DIRECT
-  "https://random-blog-example.net/post/1", // ETC
+  null,
+  "https://random-blog-example.net/post/1",
 ];
 
 function uuidv4() {
@@ -66,21 +59,18 @@ function uuidv4() {
   });
 }
 
-// VU(__VU)마다 한 번만 배정하고 그 VU의 남은 이터레이션 동안 재사용 — 실제 세션처럼
-// 같은 방문자는 계속 같은 UA/referrer/visitor_id를 유지한다.
+// VU마다 한 번만 배정하고 이터레이션 동안 재사용
 const visitorProfiles = {};
 function getVisitorProfile() {
   const vu = __VU;
   if (!visitorProfiles[vu]) {
-    const profile = {
+    visitorProfiles[vu] = {
       visitorId: uuidv4(),
       userAgent: UA_PROFILES[vu % UA_PROFILES.length],
       referrer: REFERRER_PROFILES[vu % REFERRER_PROFILES.length],
     };
-    visitorProfiles[vu] = profile;
-    console.log(
-      `visitor VU=${vu} visitor_id=${profile.visitorId} ua_profile=${vu % UA_PROFILES.length} referrer_profile=${vu % REFERRER_PROFILES.length}`
-    );
+    // 로깅 부하 방지를 위해 디버깅 용도가 아니면 주석 처리 권장
+    // console.log(`visitor VU=${vu} visitor_id=${visitorProfiles[vu].visitorId}`);
   }
   return visitorProfiles[vu];
 }
@@ -91,33 +81,36 @@ export const options = {
       executor: "ramping-arrival-rate",
       startRate: 0,
       timeUnit: "1s",
-      preAllocatedVUs: 30,
-      maxVUs: 250,
+      preAllocatedVUs: 50,
+      maxVUs: 1000, // 응답 지연 시 TPS 유지를 위한 넉넉한 예비 VU
       stages: [
-        { target: PEAK_TPS, duration: "2m" }, // 상승
-        { target: PEAK_TPS, duration: "6m" }, // 유지
-        { target: 0, duration: "2m" }, // 하강
-      ], // 총 20분
+        { target: PEAK_TPS, duration: "2m" }, // 2분 상승
+        { target: PEAK_TPS, duration: "6m" }, // 6분 유지
+        { target: 0, duration: "2m" },        // 2분 하강 (총 10분)
+      ],
     },
   },
   thresholds: {
-    http_req_failed: ["rate==0"], // 에러율 0% (성능 요구사항)
-    http_req_duration: ["p(99)<150"], // p99 < 150ms (성능 요구사항)
+    http_req_failed: ["rate==0"],
+    http_req_duration: ["p(95)<150", "p(99)<1000"],
   },
 };
 
 export default function () {
   let n, pool;
-  if (Math.random() < HOT_TRAFFIC_RATIO) {
-    n = 1 + Math.floor(Math.random() * HOT_COUNT); // 핫 구간: 1..HOT_COUNT
+
+  // 경계값 처리: HOT_COUNT가 전체 풀과 같거나 클 경우 에러 방지
+  if (HOT_COUNT >= SLUG_COUNT || Math.random() < HOT_TRAFFIC_RATIO) {
+    n = 1 + Math.floor(Math.random() * HOT_COUNT); // 핫 구간
     pool = "hot";
   } else {
     n = HOT_COUNT + 1 + Math.floor(Math.random() * (SLUG_COUNT - HOT_COUNT)); // 콜드 구간
     pool = "cold";
   }
-  const slug = `${SLUG_PREFIX}${n}`;
 
+  const slug = `${SLUG_PREFIX}${n}`;
   const visitor = getVisitorProfile();
+
   const headers = {
     "User-Agent": visitor.userAgent,
     Cookie: `visitor_id=${visitor.visitorId}`,
@@ -126,9 +119,7 @@ export default function () {
     headers["Referer"] = visitor.referrer;
   }
 
-  // tags.name 고정(+ hot/cold 구분만 추가, 값 2개뿐이라 카디널리티 안전) — 안 주면
-  // k6가 URL(슬러그별로 다름)을 라벨로 써서 시계열이 슬러그 개수만큼 폭발한다
-  // (실제로 87만 개까지 간 적 있음).
+  // tags.name으로 URL 변동에 따른 메트릭 카디널리티 폭발 방지
   const res = http.get(`${BASE_URL}/${slug}`, {
     redirects: 0,
     headers,

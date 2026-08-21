@@ -29,6 +29,10 @@ spec:
               value: "${SLUG_COUNT}"
             - name: PEAK_TPS
               value: "${PEAK_TPS}"
+            - name: MAX_TPS
+              value: "${MAX_TPS}"
+            - name: RAMP_DURATION
+              value: "${RAMP_DURATION}"
             - name: VUS
               value: "${VUS}"
             - name: DURATION

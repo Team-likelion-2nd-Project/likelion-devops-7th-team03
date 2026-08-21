@@ -8,8 +8,8 @@
 # 예시:
 #   load-test/run-smoke.sh snipy redirect-smoke.js https://dev.snipy.life test 10 30s
 #
-# vus/duration은 redirect-smoke.js 전용. SLUG_PREFIX/SLUG_COUNT/PEAK_TPS는 호출 전에
-# export해두면 그대로 Job에 전달됨 (normal-traffic-run.sh 참고).
+# vus/duration은 redirect-smoke.js 전용. SLUG_PREFIX/SLUG_COUNT/PEAK_TPS/MAX_TPS/RAMP_DURATION은
+# 호출 전에 export해두면 그대로 Job에 전달됨 (normal-traffic-run.sh, breakpoint-run.sh 참고).
 set -euo pipefail
 
 CONTEXT="${1:?사용법: run-smoke.sh <kubectl-context> <script-file> <base-url> [slug] [vus] [duration]}"
@@ -21,6 +21,8 @@ DURATION="${6:-30s}"
 SLUG_PREFIX="${SLUG_PREFIX:-}"
 SLUG_COUNT="${SLUG_COUNT:-0}"
 PEAK_TPS="${PEAK_TPS:-}"
+MAX_TPS="${MAX_TPS:-}"
+RAMP_DURATION="${RAMP_DURATION:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -40,6 +42,7 @@ kubectl --context "$CONTEXT" create configmap k6-load-test-script \
 echo ">> [$CONTEXT] Job 생성 (SCRIPT=$SCRIPT_FILE BASE_URL=$BASE_URL SLUG=$SLUG VUS=$VUS DURATION=$DURATION)"
 SCRIPT_FILE="$SCRIPT_FILE" BASE_URL="$BASE_URL" SLUG="$SLUG" VUS="$VUS" DURATION="$DURATION" \
   SLUG_PREFIX="$SLUG_PREFIX" SLUG_COUNT="$SLUG_COUNT" PEAK_TPS="$PEAK_TPS" \
+  MAX_TPS="$MAX_TPS" RAMP_DURATION="$RAMP_DURATION" \
   envsubst < "$SCRIPT_DIR/job.yaml.template" | kubectl --context "$CONTEXT" apply -f -
 
 echo ">> Job 완료 대기 (최대 25분)"

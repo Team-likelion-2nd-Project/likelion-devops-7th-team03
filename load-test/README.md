@@ -28,6 +28,10 @@ load-test/viral-spike-run.sh snipy
 
 # Load/Stress (PEAK_TPS만 다름) — 링크 30만 개 생성부터 실행/정리까지 원스톱
 load-test/normal-traffic-run.sh snipy
+
+# Breakpoint — 단일 파드 처리량 한계 측정. Service가 아니라 파드 하나의 Pod IP로 직접 쏨
+# (여러 파드로 분산되면 "파드 1개 한계"를 잴 수 없어서. HPA/Deployment는 안 건드림)
+load-test/breakpoint-run.sh snipy
 ```
 
 `viral-spike.js`/`normal-traffic.js`는 management-service API로 못 만드는 링크(캐시 즉시 채워짐, slug 자동생성)가 필요해서, `*-run.sh`가 MySQL에 직접 INSERT하고 테스트 후 정리한다 (자세한 내용은 `SCENARIOS.md`).

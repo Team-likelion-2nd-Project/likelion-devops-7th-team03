@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
-# Load/Stress 겸용 원스톱 실행: 링크 MySQL 직접 INSERT → normal-traffic.js 실행 →
-# 테스트 데이터 DELETE. load-test/SCENARIOS.md 참고.
-# management-service API 대신 직접 INSERT하는 이유는 viral-spike-run.sh 헤더 참고.
+# ==============================================================================
+# Load/Stress 겸용 원스톱 실행 스크립트
 #
-# 링크 풀 하나(기본 30만 개 — SCENARIOS.md의 동시 활성 링크 추정치와 동일)를 만들고
-# normal-traffic.js가 그 안에서 hot/cold 구간을 나눈다(HOT_COUNT/HOT_TRAFFIC_RATIO).
-# 풀을 bash로 나열하면 너무 커지므로 MySQL 재귀 CTE로 서버 사이드에서 한 번에
-# 생성하고, 정리(DELETE)도 slug LIKE 패턴 하나로 끝낸다.
+# [동작 순서]
+# 1. MySQL 재귀 CTE를 통해 링크 대량 생성 (기본 30만 개)
+# 2. k6 normal-traffic.js 실행 (2분 상승 → 6분 유지 → 2분 하강, 총 10분)
+# 3. 테스트 완료 또는 중단(Ctrl+C, 에러) 시 trap을 통해 생성된 링크 자동 정리(DELETE)
 #
-# 사용법:
+# [사용법]
 #   load-test/normal-traffic-run.sh <kubectl-context> [base-url] [num-links] [peak-tps]
 #
-# 예시:
-#   load-test/normal-traffic-run.sh snipy                              # Load: 기본 30만개, 230 TPS
-#   load-test/normal-traffic-run.sh snipy http://redirect-service:8080 300000 23   # Load(낮은 TPS)
+# [예시]
+#   load-test/normal-traffic-run.sh snipy                                          # Load: 기본 30만개, 230 TPS
+#   load-test/normal-traffic-run.sh snipy http://redirect-service:8080 300000 23   # Load (낮은 TPS)
 #   load-test/normal-traffic-run.sh snipy http://redirect-service:8080 300000 230  # Stress
+# ==============================================================================
+
 set -euo pipefail
 
 CONTEXT="${1:?사용법: normal-traffic-run.sh <kubectl-context> [base-url] [num-links] [peak-tps]}"
@@ -24,10 +25,11 @@ PEAK_TPS="${4:-230}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Context별 AWS Secrets Manager 클러스터 경로 매핑
 case "$CONTEXT" in
   snipy)      CLUSTER_NAME="snipy-dev-cluster" ;;
   snipy-prod) CLUSTER_NAME="snipy-cluster" ;;
-  *) echo "알 수 없는 context: $CONTEXT (CLUSTER_NAME 매핑을 스크립트에 추가하세요)" >&2; exit 1 ;;
+  *) echo "!! 알 수 없는 context: $CONTEXT (CLUSTER_NAME 매핑을 스크립트에 추가하세요)" >&2; exit 1 ;;
 esac
 
 echo ">> [$CONTEXT] DB 접속 정보 조회"
@@ -39,7 +41,7 @@ DB_PASSWORD=$(aws secretsmanager get-secret-value \
   --secret-id "${CLUSTER_NAME}/rds/app-user-password" \
   --query SecretString --output text)
 
-# viral-spike-run.sh와 동일한 이유로 --rm -i(attach) 대신 폴링 방식 사용.
+# 통신 단절(Broken Pipe) 방지를 위해 임시 Pod 생성 후 비동기 폴링 방식으로 SQL 실행
 run_sql() {
   local sql="$1"
   local pod_name="mysql-client-$$-${RANDOM}"
@@ -50,7 +52,7 @@ run_sql() {
     >/dev/null
 
   local phase=""
-  for _ in $(seq 1 600); do # 30만 개 INSERT는 재귀 CTE라 시간이 걸릴 수 있어 넉넉히
+  for _ in $(seq 1 600); do # 대량 INSERT/DELETE 소요 시간을 고려하여 최대 10분 대기
     phase=$(kubectl --context "$CONTEXT" get pod "$pod_name" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
     [[ "$phase" == "Succeeded" || "$phase" == "Failed" ]] && break
     sleep 1
@@ -70,7 +72,7 @@ run_sql() {
 echo ">> [$CONTEXT] 기존 user id 조회"
 USER_ID=$(run_sql "SELECT id FROM users ORDER BY id LIMIT 1;" | tr -d '\r' | head -n1)
 if [[ -z "$USER_ID" ]]; then
-  echo "users 테이블이 비어있음 — 카카오 로그인을 한 번이라도 한 계정이 있어야 함" >&2
+  echo "!! users 테이블이 비어있음 — 카카오 로그인을 한 번이라도 한 계정이 있어야 합니다." >&2
   exit 1
 fi
 echo "   user_id=$USER_ID"
@@ -78,8 +80,15 @@ echo "   user_id=$USER_ID"
 TS=$(date +%s)
 SLUG_PREFIX="lt${TS: -6}"
 
-# 재귀 CTE로 서버 사이드에서 N개를 한 번에 생성 (bash에서 수만 개 나열 안 함).
-# cte_max_recursion_depth 기본값(1000)보다 큰 풀을 쓰므로 세션 변수로 올려줘야 함.
+# 스크립트 비정상 종료(Ctrl+C, Error 등) 시에도 테스트 링크를 반드시 삭제하도록 trap 설정
+cleanup() {
+  echo ">> [$CONTEXT] 테스트 링크 정리 (prefix=${SLUG_PREFIX}*)"
+  run_sql "DELETE FROM links WHERE slug LIKE '${SLUG_PREFIX}%';" || \
+    echo "!! 자동 정리 실패 — 수동 삭제 필요: DELETE FROM links WHERE slug LIKE '${SLUG_PREFIX}%';" >&2
+}
+trap cleanup EXIT
+
+# 재귀 CTE로 서버 사이드에서 N개의 링크를 한 번에 생성 (네트워크 I/O 및 파싱 오버헤드 최소화)
 echo ">> [$CONTEXT] 링크 ${NUM_LINKS}개 (prefix=$SLUG_PREFIX) INSERT"
 run_sql "
   SET SESSION cte_max_recursion_depth = $((NUM_LINKS + 10));
@@ -93,14 +102,7 @@ run_sql "
   FROM seq;
 "
 
-cleanup() {
-  echo ">> [$CONTEXT] 테스트 링크 정리 (prefix=$SLUG_PREFIX*)"
-  run_sql "DELETE FROM links WHERE slug LIKE '${SLUG_PREFIX}%';" || \
-    echo "!! 자동 정리 실패 — 수동으로 지워야 함: DELETE FROM links WHERE slug LIKE '${SLUG_PREFIX}%';" >&2
-}
-trap cleanup EXIT
-
-echo ">> [$CONTEXT] k6 normal-traffic 실행 (링크 ${NUM_LINKS}개, PEAK_TPS=${PEAK_TPS}, 20분)"
+echo ">> [$CONTEXT] k6 normal-traffic 실행 (링크 ${NUM_LINKS}개, PEAK_TPS=${PEAK_TPS}, 총 10분)"
 export SLUG_PREFIX
 export SLUG_COUNT="$NUM_LINKS"
 export PEAK_TPS

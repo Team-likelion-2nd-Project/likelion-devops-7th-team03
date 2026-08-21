@@ -84,6 +84,12 @@ variable "elasticache_node_type" {
   default     = "cache.t4g.micro"
 }
 
+variable "rds_instance_class" {
+  description = "RDS 인스턴스 타입"
+  type = string
+  default = "dbb.t3.micro"
+}
+
 variable "domain_name" {
   description = "서비스 도메인 (Route53에 등록된 도메인)"
   type        = string

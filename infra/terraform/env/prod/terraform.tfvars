@@ -3,7 +3,8 @@ cluster_name = "snipy-cluster"
 
 # 가용성 우선 사이징 (dev는 비용 절감 위해 env/dev/terraform.tfvars에서 축소)
 single_nat_gateway                     = false
-node_instance_type                     = "t3.medium"
+node_instance_type                     = "m5.large"
+rds_instance_class                     = "db.m6g.large"
 node_min_size                          = 3
 node_max_size                          = 5
 node_desired_size                      = 3

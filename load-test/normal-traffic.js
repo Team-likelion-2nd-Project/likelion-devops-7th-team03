@@ -29,6 +29,11 @@ const PEAK_TPS = Number(__ENV.PEAK_TPS || 200);
 
 const HOT_COUNT = Math.min(SLUG_COUNT, Number(__ENV.HOT_COUNT || 50));
 const HOT_TRAFFIC_RATIO = Number(__ENV.HOT_TRAFFIC_RATIO || 0.8);
+const TESTID = __ENV.TESTID || "unknown";
+
+export function setup() {
+  console.log(`[testid] ${TESTID}`);
+}
 
 // device_type(yauaa DeviceClass)별로 하나씩 — DESKTOP/MOBILE/TABLET 커버
 const UA_PROFILES = [
@@ -76,6 +81,7 @@ function getVisitorProfile() {
 }
 
 export const options = {
+  tags: { testid: TESTID }, // 모든 메트릭에 testid 라벨을 붙여 Grafana/Prometheus에서 이번 실행만 필터링 가능하게 함
   scenarios: {
     ramped_load: {
       executor: "ramping-arrival-rate",

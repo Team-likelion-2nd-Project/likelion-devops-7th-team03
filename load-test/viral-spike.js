@@ -12,8 +12,14 @@ import { check } from "k6";
 
 const BASE_URL = __ENV.BASE_URL || "http://redirect-service:8080";
 const SLUGS = (__ENV.SLUGS || __ENV.SLUG || "test").split(",").map((s) => s.trim());
+const TESTID = __ENV.TESTID || "unknown";
+
+export function setup() {
+  console.log(`[testid] ${TESTID}`);
+}
 
 export const options = {
+  tags: { testid: TESTID }, // 모든 메트릭에 testid 라벨을 붙여 Grafana/Prometheus에서 이번 실행만 필터링 가능하게 함
   scenarios: {
     viral_spike: {
       executor: "ramping-arrival-rate",

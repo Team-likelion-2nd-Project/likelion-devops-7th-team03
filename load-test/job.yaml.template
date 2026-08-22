@@ -33,6 +33,8 @@ spec:
               value: "${MAX_TPS}"
             - name: RAMP_DURATION
               value: "${RAMP_DURATION}"
+            - name: TESTID
+              value: "${TESTID}"
             - name: VUS
               value: "${VUS}"
             - name: DURATION

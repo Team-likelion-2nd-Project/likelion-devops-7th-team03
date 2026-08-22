@@ -144,6 +144,11 @@ resource "kubernetes_config_map" "redirect_service_config" {
     REDIS_PORT  = "6379"
     FIREHOSE_STREAM_NAME = module.streaming.firehose_delivery_stream_name
     AWS_REGION           = var.aws_region
+
+    DB_HIKARI_MAX_POOL_SIZE = "8"
+    # 컨테이너 메모리 limit 대비 %가 아니라 절대값 고정 — 리소스 사이징 계산이
+    # 절대 힙 크기(MB) 기준이라 컨테이너 limit을 바꿔도 힙이 같이 흔들리면 안 됨.
+    JAVA_TOOL_OPTIONS = "-Xms512m -Xmx512m"
   }
 
   depends_on = [module.database]

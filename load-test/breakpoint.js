@@ -25,8 +25,14 @@ const SLUG_PREFIX = __ENV.SLUG_PREFIX || "test";
 const SLUG_COUNT = Number(__ENV.SLUG_COUNT || 20);
 const MAX_TPS = Number(__ENV.MAX_TPS || 2000);
 const RAMP_DURATION = __ENV.RAMP_DURATION || "10m";
+const TESTID = __ENV.TESTID || "unknown";
+
+export function setup() {
+  console.log(`[testid] ${TESTID}`);
+}
 
 export const options = {
+  tags: { testid: TESTID }, // 모든 메트릭에 testid 라벨을 붙여 Grafana/Prometheus에서 이번 실행만 필터링 가능하게 함
   scenarios: {
     breakpoint: {
       executor: "ramping-arrival-rate",

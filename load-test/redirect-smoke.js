@@ -11,11 +11,17 @@ import { check, sleep } from "k6";
 
 const BASE_URL = __ENV.BASE_URL || "https://dev.snipy.life";
 const SLUG = __ENV.SLUG || "test";
+const TESTID = __ENV.TESTID || "unknown";
 
 export const options = {
   vus: Number(__ENV.VUS || 10),
   duration: __ENV.DURATION || "30s",
+  tags: { testid: TESTID }, // 모든 메트릭에 testid 라벨을 붙여 Grafana/Prometheus에서 이번 실행만 필터링 가능하게 함
 };
+
+export function setup() {
+  console.log(`[testid] ${TESTID}`);
+}
 
 export default function () {
   // tags.name 고정 — 안 주면 k6가 URL(슬러그별로 다 다름)을 그대로 메트릭 라벨로 써서

@@ -170,3 +170,59 @@ Redis는 멀쩡했고, **redirect-service 파드(고정 2개, CPU limit 500m×2=
 **전제 조건**: 현재 redirect-service/management-service는 `replicas: 2` 고정이고 HPA 리소스 자체가 없음 (metrics-server만 설치됨). 이 트랙을 시작하려면 HPA를 먼저 추가해야 함.
 
 **중요 제약**: Cluster Autoscaler의 노드 추가는 보통 1~3분 걸리는데, 바이럴 스파이크 테스트는 5분짜리라 초반 스파이크는 오토스케일링이 반응하기 전에 지나갈 수 있음. 스파이크 대응력은 사실상 사전 확보된 여유 capacity(HPA `minReplicas`)에 좌우된다는 점을 감안해서, "cold(기본 상태에서 시작)" vs "warm(미리 스케일업된 상태)" 스파이크를 나눠 테스트하면 오토스케일링의 실질적 기여도를 수치로 보여줄 수 있음.
+
+### Step 1 — 단일 파드 성능 측정 (2026-08-21, dev)
+
+HPA를 끄는 대신 Service를 거치지 않고 파드 하나의 **Pod IP로 직접** 부하를 줘서 격리(`load-test/breakpoint.js`, `breakpoint-run.sh`). 과정에서 병목 2개를 찾아 수정:
+
+1. **HikariCP pool 8 → 16**: `application.yml` 기본값(`DB_HIKARI_MAX_POOL_SIZE:8`)이 작아서 늘림.
+2. **JVM 힙 미설정**: Dockerfile이 `-Xmx` 없이 `java -jar app.jar`만 실행 → 컨테이너 메모리 limit(1Gi)의 기본 25%(`MaxRAMPercentage`)만 힙으로 잡혀 **max heap ~250MB(Eden 68MB)**. 부하 중 major GC pause가 wall-time의 7~10%를 차지해 p99를 750~800ms까지 밀어올림. `JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=75.0` 추가로 max heap을 **~742MB**로 늘려서 해결 (이미지 리빌드 불필요 — JVM이 시작 시 자동으로 읽는 표준 env var).
+
+**수정 후 현재 spec** (dev, 2026-08-21 기준):
+
+| 항목 | 값 |
+|---|---|
+| redirect-service CPU | request 250m / limit 500m |
+| redirect-service Memory | request 512Mi / limit 1Gi |
+| JVM heap | `JAVA_TOOL_OPTIONS=-Xms512m -Xmx512m` (고정값, Step 2에서 퍼센트 방식→고정값으로 변경) |
+| HikariCP pool | max 8(Step 2에서 16→8로 축소), min-idle 2 |
+| RDS | `db.m6g.large` |
+| ElastiCache | `cache.t4g.micro` |
+| 노드 | `m5.large` × 3 |
+| HPA | min 2 / max 6, target CPU 70% |
+
+**단일 파드 결과 (100 TPS, 10만 링크, 10분 — `normal-traffic.js` 80/20 hot/cold)**: p95=**6.82ms**, p99=**51.61ms**, 에러율 0% — SLA(p99<150ms) 대비 압도적 여유. GC/Hikari 수정 전(p95=528ms, p99=783ms) 대비 개선폭이 매우 큼 → 진짜 병목은 CPU/DB가 아니라 GC였다는 뜻.
+
+### Step 2 — 파드당 200 TPS 목표로 비용 효율화 시도 (2026-08-21, dev) — 실패, 원복
+
+목표: p95<100ms, p99<300ms를 유지하면서 파드당 200 TPS를 처리하도록 리소스를 낮춰서 비용 절감.
+
+**breakpoint 결과 (현재 스펙, 캐시히트 100% 풀 20개)**: TPS를 계속 올리다 8분22초/목표 TPS ~1670에서 p95>1000ms로 자동 중단(에러율은 끝까지 0%) — 500m CPU에서 순수 캐시히트 한계는 대략 1,600~1,700 TPS.
+
+**캐시히트 전용 데이터로 리소스를 줄이려다 한 번 실패**: breakpoint(캐시히트 100%)의 CPU/req(0.436ms)로 계산한 CPU 300m는, 실제 80/20 믹스 트래픽에서 나온 CPU/req(0.61ms, 캐시미스가 더 비쌈)로 다시 계산하면 부족했음. 우연히 남아있던 800 TPS 믹스 트래픽 실측 데이터(CPU 500m에서 0.488 core=97.6% 포화, cold p95=157ms로 이미 SLA 탈락 직전)로 재계산해서 **CPU limit 300~400m** 선으로 수정.
+
+**실제 적용 시도 (CPU request 150m/limit 300m, Memory 384Mi/limit 768Mi, heap 고정 512MB)에서 크래시루프 발생**: JVM 콜드스타트(클래스 로딩+Spring 컨텍스트 초기화)가 정상 서빙보다 CPU를 훨씬 많이 씀. startupProbe 150초 안에 못 떠서 kubelet이 반복 kill → HPA가 불안정 판단해 파드 6개까지 증설 → 여러 파드가 같은 노드에서 CPU 경쟁하며 서로 더 느려지는 악순환. exitCode 143(SIGTERM, startup probe timeout)으로 확인.
+
+**교훈**: request와 limit을 동시에 낮추면 위험함. request는 "보장된" 몫이고 limit까지의 버스트는 노드에 여유가 있을 때만 가능한데, 여러 파드가 한꺼번에 재시작하는 상황(정확히 이번에 겪은 시나리오)에서는 노드에 여유가 없어 결국 request만큼만 받음 — "request 낮게, limit 높게"도 최악의 경우엔 구원되지 않음. 안전하게 재시도하려면 CPU를 낮추기 전에 **`startupProbe.failureThreshold`를 늘려서**(현재 150초 → 예: 300초) 콜드스타트가 느려도 죽지 않게 시간 쪽으로 마진을 먼저 확보해야 함.
+
+**최종 결정 (2026-08-21)**: CPU/메모리는 검증된 값(request 250m/limit 500m, request 512Mi/limit 1Gi)으로 원복하고 비용 튜닝은 보류. 아래는 유지:
+- HikariCP pool: 16 → **8**로 축소 유지 (DB 트래픽이 캐시히트율 감안 시 여유 충분해서 문제 없었음)
+- JVM heap: `JAVA_TOOL_OPTIONS`을 퍼센트(`MaxRAMPercentage`) 대신 **절대값 고정** (`-Xms512m -Xmx512m`)으로 변경 유지 — 컨테이너 memory limit을 나중에 바꿔도 힙 크기가 같이 흔들리지 않게 하기 위함.
+
+파드당 200 TPS 비용 효율화를 다시 시도하려면: (1) `startupProbe.failureThreshold`를 먼저 늘려서 콜드스타트 타임아웃 위험 제거, (2) request만 낮추고 limit은 그대로 두는 대신 **실제 재시작이 몰리는 상황(롤링 재배포, 다중 파드 동시 재시작)까지 포함해서 검증**, (3) 필요하면 JVM 콜드스타트 자체를 가볍게 하는 옵션(`-XX:TieredStopAtLevel=1` 등)도 검토.
+
+### Step 2 후속 — CPU를 250m/500m로 원복한 뒤에도 HPA 스케일아웃 시 latency 스파이크 재현 (2026-08-21, dev)
+
+원복 후 800 TPS 부하테스트(`normal-traffic.js`) 중 **p99가 순간적으로 8.3초(cold)/993ms(hot)까지 튐** — 정확히 HPA가 파드를 4→6개로 늘리는 순간(14:04:30~14:05:45)에 발생. 타임라인으로 원인 확인:
+
+| 시각 | 파드 수 | CPU throttle(전체 합, periods/s) | Hikari pending(전체 합) | k6 VUs |
+|---|---|---|---|---|
+| 14:04:00 | 4 | 36 | 0 | 16 |
+| 14:04:45 | 6 (막 스케일아웃) | 43 | 62 | 240 |
+| 14:05:15 | 6 | 65 | 166 | 270(피크) |
+| 14:05:30 | 6 | **72.7(피크)** | **169(피크)** | 224 |
+| 14:06:30 | 6 | 70.5 | 0 | 21 |
+
+**연쇄 반응**: HPA가 새 파드 2개를 투입 → 새 파드는 CPU/JIT 콜드 상태라 throttling 폭증(합계 최대 74.6/s, 여러 파드가 동시에 워밍업 중이라 겹침) → 처리 지연으로 DB 커넥션을 평소보다 오래 붙잡음 → Hikari pool(6파드×8=48) 사실상 고갈, pending 169까지 쌓임 → k6(open-workload, `ramping-arrival-rate`)가 응답 지연을 감지하고 목표 TPS를 유지하려 VU를 240~270개까지 증폭 → 부하가 더 몰려 상황 악화 → 약 1분 반 뒤 워밍업 종료되며 자연 회복. Major GC는 이 구간 내내 0 — GC는 무관.
+
+**결론**: Hikari pool 크기나 GC가 아니라 **HPA 스케일아웃 시 새 파드의 CPU 콜드스타트가 방아쇠**이고, 그게 커넥션 풀 고갈로 전이되며, k6의 VU 증폭이 상황을 증폭시키는 연쇄 장애. Step 2의 크래시루프와 근본 원인이 동일함(콜드스타트가 CPU를 많이 씀) — 이번엔 CPU가 500m라 파드가 죽진 않았지만, 대신 8초짜리 latency 스파이크로 나타남. **`startupProbe` 조정만으로는 이 문제를 못 막음**(파드가 죽지 않으니) — 스케일아웃 자체를 덜 갑작스럽게 하거나(HPA `behavior.scaleUp` 정책으로 증설 속도 제한), 콜드스타트 CPU 비용 자체를 줄이는(JIT 튜닝, AppCDS 등) 접근이 필요해 보임.

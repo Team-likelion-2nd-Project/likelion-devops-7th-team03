@@ -40,6 +40,8 @@ load-test/breakpoint-run.sh snipy
 
 k6가 `--out experimental-prometheus-rw`로 결과를 클러스터 내 Prometheus에 바로 remote-write한다. Grafana에서 보려면 공식 k6 대시보드(grafana.com dashboard id **19665**)를 Import 메뉴에서 한 번 가져오면 된다.
 
+모든 실행마다 유니크한 `testid`가 자동 부여되고(`run-smoke.sh`가 시작 시 stdout에 출력, k6 로그에도 `[testid] ...`로 찍힘) 모든 메트릭에 라벨로 붙는다. Prometheus/Grafana에서 `testid="<값>"`으로 다른 실행과 섞이지 않게 필터링 가능.
+
 ```bash
 kubectl --context <context> port-forward -n monitoring svc/kube-prometheus-grafana 3000:80
 # http://localhost:3000, admin / (사전 준비 2번에서 조회한 비밀번호)

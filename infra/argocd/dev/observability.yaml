@@ -39,6 +39,12 @@ spec:
         grafana:
           admin:
             existingSecret: grafana-admin-credentials
+          # replicaCount 1 + RWO(EBS) PVC 조합에서 기본 RollingUpdate 전략을 쓰면,
+          # 새 pod가 다른 노드에 뜰 때 기존 pod가 아직 볼륨을 붙잡고 있어
+          # Multi-Attach 에러로 영원히 데드락됨. 볼륨을 공유 못 하니 기존 pod를
+          # 먼저 내리는 Recreate로 바꿔야 함.
+          deploymentStrategy:
+            type: Recreate
           sidecar:
             dashboards:
               enabled: true

@@ -56,9 +56,10 @@ module "database" {
 module "streaming" {
   source = "../../modules/streaming"
 
-  cluster_name      = var.cluster_name
-  oidc_provider_arn = module.cluster.oidc_provider_arn
-  oidc_provider     = module.cluster.oidc_provider
+  cluster_name       = var.cluster_name
+  oidc_provider_arn  = module.cluster.oidc_provider_arn
+  oidc_provider      = module.cluster.oidc_provider
+  glue_database_name = "snipy_click_logs"
 }
 
 module "edge" {

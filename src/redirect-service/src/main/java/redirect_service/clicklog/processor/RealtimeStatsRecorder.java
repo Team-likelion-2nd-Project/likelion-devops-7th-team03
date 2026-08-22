@@ -73,6 +73,9 @@ public class RealtimeStatsRecorder {
     @Async("realtimeStatsRecorderExecutor")
     @EventListener
     public void onClick(ClickEvent clickEvent) {
+        if (clickEvent.isBot()) {
+            return; // Athena 배치(is_bot=false 필터)와 집계 기준을 맞춘다.
+        }
         if (!pendingEvents.offer(clickEvent)) {
             long dropped = droppedEventCount.incrementAndGet();
             if (dropped == 1 || dropped % 1_000 == 0) {

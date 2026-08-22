@@ -43,6 +43,7 @@ module "database" {
   database_subnets                       = module.network.database_subnets
   node_security_group_id                 = module.cluster.node_security_group_id
   elasticache_node_type                  = var.elasticache_node_type
+  rds_instance_class                     = var.rds_instance_class
   rds_multi_az                           = var.rds_multi_az
   elasticache_num_cache_clusters         = var.elasticache_num_cache_clusters
   elasticache_automatic_failover_enabled = var.elasticache_automatic_failover_enabled
@@ -115,7 +116,7 @@ resource "kubernetes_config_map" "management_service_config" {
     REDIS_HOST                         = module.database.elasticache_primary_endpoint
     REDIS_PORT                         = "6379"
     REDIRECT_CACHE_TTL                 = "10m"
-    KAKAO_REDIRECT_URI                 = "https://${var.domain_name}/auth/kakao/callback"
+    KAKAO_REDIRECT_URI                 = "https://app.${var.domain_name}/auth/kakao/callback"
     JWT_ACCESS_TOKEN_VALIDITY_SECONDS  = "1800"
     JWT_REFRESH_TOKEN_VALIDITY_SECONDS = "1209600"
     SHORT_URL_BASE_URL                 = "https://${var.domain_name}"

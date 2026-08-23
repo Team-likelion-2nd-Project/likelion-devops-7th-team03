@@ -1,8 +1,8 @@
 // Load/Stress 겸용 스크립트 — PEAK_TPS 환경 변수 하나로 두 시나리오 재사용 가능
 // (예: Load는 PEAK_TPS=23, Stress는 PEAK_TPS=230).
 //
-// [테스트 시나리오: 총 10분]
-// 0 → PEAK_TPS로 2분 상승 → 6분 유지 → 2분 하강
+// [테스트 시나리오: 총 20분]
+// 0 → PEAK_TPS로 5분 상승 → 10분 유지 → 5분 하강
 //
 // [트래픽 분배: 80/20 & Coupon Collector 최적화]
 // 링크는 하나의 풀(1..SLUG_COUNT)로 생성하며, 그 안에서 앞쪽 HOT_COUNT개(비율이 아닌 절대값)를
@@ -90,9 +90,9 @@ export const options = {
       preAllocatedVUs: 50,
       maxVUs: 1000, // 응답 지연 시 TPS 유지를 위한 넉넉한 예비 VU
       stages: [
-        { target: PEAK_TPS, duration: "2m" }, // 2분 상승
-        { target: PEAK_TPS, duration: "6m" }, // 6분 유지
-        { target: 0, duration: "2m" },        // 2분 하강 (총 10분)
+        { target: PEAK_TPS, duration: "5m" },  // 5분 상승
+        { target: PEAK_TPS, duration: "10m" }, // 10분 유지
+        { target: 0, duration: "5m" },         // 5분 하강 (총 20분)
       ],
     },
   },

@@ -1,35 +1,34 @@
-# {{프로젝트명}} ({{PROJECT_NAME_EN}})
+# Snipy-링크 단축 및 마케팅 툴 서비스
 
 > **협업이 처음이신가요?** 이슈 생성부터 PR 머지까지 전 과정은 [협업 가이드](./docs/GUIDE.md)를 먼저 읽어주세요.
 
 ![Team](https://img.shields.io/badge/Team-team-03-151515?style=for-the-badge)
 <!-- 사용 기술만 남기고 나머지는 삭제 -->
 ![React](https://img.shields.io/badge/React-151515?style=for-the-badge&logo=react&logoColor=61DAFB)
-![TypeScript](https://img.shields.io/badge/TypeScript-151515?style=for-the-badge&logo=typescript&logoColor=3178C6)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-151515?style=for-the-badge&logo=springboot&logoColor=6DB33F)
 ![MySQL](https://img.shields.io/badge/MySQL-151515?style=for-the-badge&logo=mysql&logoColor=4479A1)
 ![AWS](https://img.shields.io/badge/AWS-151515?style=for-the-badge&logo=amazonwebservices&logoColor=FF9900)
 
-> **{{한 문장 소개 — 누구의 어떤 문제를, 어떻게 해결하는 서비스인가}}**
+> **배포 후에도 관리되는 URL 단축 서비스**
 
 [![데모 영상](https://img.youtube.com/vi/{{YOUTUBE_ID}}/maxresdefault.jpg)]({{YOUTUBE_URL}})
 
 {{서비스 2~3문장 설명. 대상 사용자와 핵심 가치 중심으로.}}
 
-- **배포 주소:** {{https://example.com}}
-- **시연 영상:** [YouTube]({{YOUTUBE_URL}})
-- **문서 최종 정리일:** `YYYY-MM-DD` / **구현 기준일:** `YYYY-MM-DD`
+- **배포 주소:** {{ https://app.snipy.life }}
+- **시연 영상:** /docs/
+- **문서 최종 정리일:** `2026-08-24` / **구현 기준일:** `2026-08-21`
 
 ---
 
 ## 팀 구성
 
-| 이름 | 역할 | 담당 | GitHub |
-|------|------|------|--------|
-| {{이름}} | 팀장 / BE | {{담당 도메인}} | [@{{id}}](https://github.com/{{id}}) |
-| {{이름}} | BE | {{담당 도메인}} | [@{{id}}](https://github.com/{{id}}) |
-| {{이름}} | FE | {{담당 화면}} | [@{{id}}](https://github.com/{{id}}) |
-| {{이름}} | FE | {{담당 화면}} | [@{{id}}](https://github.com/{{id}}) |
+| 이름 | 역할 | 담당 |
+|------|------|------|
+| 한소현 | 팀장 / BE / CD | 담당 로그인 / 인프라 / 배포 |
+| 박장현 | BE/FE | 담당 통계 API 및 통계 대시보드 / 화면 |
+| 유승미 | BE/CI | 담당 통계 API / 배치 및 크론잡 |
+| 정예준 | BE/CI | 담당 링크 CRUD 및 리다이렉트 서비스 / 부하테스트 |
 
 ---
 
@@ -39,9 +38,9 @@
 
 1. 위 영상 썸네일을 클릭해 전체 시연을 확인합니다.
 2. {{배포 주소}} 를 엽니다.
-3. 테스트 계정으로 로그인합니다. (`ID: {{demo}}` / `PW: {{demo1234}}`)
-4. {{핵심 기능 1}} 을 실행합니다.
-5. {{핵심 기능 2}} 결과 화면에서 {{확인 포인트}} 를 확인합니다.
+3. 테스트 계정으로 로그인합니다. (카카오 로그인 API 활용)
+4. '링크 생성' 을 실행합니다.
+5. 생성된 링크 '클릭' 후 링크 통계 화면에서 '실시간 클릭수 및 방문자 수' 를 확인합니다.
 
 ---
 
@@ -49,9 +48,9 @@
 
 > 이 프로젝트가 **의도적으로 선택한 원칙**을 3~6개 적습니다. 기능 나열이 아니라 설계 판단을 씁니다.
 
-- **{{원칙명}}** — {{무엇을 보장하고 무엇을 금지하는지}}
-- **{{원칙명}}** — {{설명}}
-- **{{원칙명}}** — {{설명}}
+- **리다이렉트는 절대 실패하지 않는다** — 클릭 로그·실시간 통계·Firehose 전송은 전부 비동기 best-effort. 큐가 포화돼도 302 응답은 항상 성공한다.
+- **소유권 검증은 JWT 클레임으로, JOIN으로 하지 않는다** — 서비스/엔티티 간 참조는 raw ID만 저장하고 연관관계를 맺지 않는다.
+- **통계는 "오늘(잠정)"과 "확정"을 섞지 않는다** — Redis는 실시간 근사치, Athena→MySQL 배치가 유일한 공식 통계 소스.
 
 ---
 
@@ -70,12 +69,12 @@
 
 | 영역 | 기술 |
 |------|------|
-| Frontend | {{React, TypeScript, Tailwind}} |
-| Backend | {{Spring Boot, JPA}} |
-| Database | {{MySQL 8.0}} |
-| Infra | {{AWS EC2, S3, RDS}} |
-| CI/CD | {{GitHub Actions}} |
-| 인증 | {{JWT / OAuth2}} |
+| Frontend | React, Vite |
+| Backend | Spring Boot 4, JPA (mini-MSA: management-service + redirect-service) |
+| Database | MySQL 8.0 (RDS Multi-AZ), Redis (ElastiCache) |
+| Infra | AWS EKS, RDS, ElastiCache, CloudFront, WAF, S3, Kinesis Firehose, Athena, Terraform |
+| CI/CD | GitHub Actions + ArgoCD(GitOps) |
+| 인증 | 카카오 OAuth2 (Authorization Code Grant) + JWT |
 
 ---
 
@@ -83,11 +82,12 @@
 
 | 기능 | 설명 | 로그인 필요 |
 |------|------|------------|
-| {{기능명}} | {{한 줄 설명}} | X |
-| {{기능명}} | {{한 줄 설명}} | O |
-| {{기능명}} | {{한 줄 설명}} | O |
+| 링크 생성 | 단축 링크 생성 | O |
+| 링크 목록 | 생성한 링크 확인 및 관리 | O |
+| 링크 통계 | 링크의 클릭 및 방문자 수, 유입경로 등 확인 | O |
+| 통계 대시보드 | 전체 클릭 및 방문자 수와 유입경로, 다른 링크와의 비교 대시보드 | O |
 
-주요 화면: {{메인 / 목록 / 상세 / 마이페이지}} — 자세한 구성은 Wiki > UI Screens 참고.
+주요 화면: {{링크 생성 / 목록 / 통계 대시보드}}
 API 상세 경로와 요청/응답 구조는 Wiki > API Specification 을 따릅니다.
 
 ---
@@ -98,9 +98,9 @@ API 상세 경로와 요청/응답 구조는 Wiki > API Specification 을 따릅
 
 | 카테고리 | 문서 |
 |----------|------|
-| **Start Here** | 기획 배경 · User Flows · UI Screens |
-| **Architecture** | System Architecture · ERD · API Specification |
-| **Operations** | 배포 가이드 · 회의록 · 트러블슈팅 |
+| Start Here | [01. 프로젝트 개요], [10. 기능별 구현 문서] |
+| Architecture | [05. 데이터베이스 설계], [06. API 명세서], [07. 시스템 아키텍처] |
+| Operations | [08. 클라우드 인프라 (AWS)], [09. CI/CD 파이프라인], [11. 개인 회고] |
 
 ---
 
@@ -110,15 +110,19 @@ API 상세 경로와 요청/응답 구조는 Wiki > API Specification 을 따릅
 
 **현재 제공:**
 
-- {{구현 완료 기능}}
-- {{구현 완료 기능}}
+- 카카오 기반 로그인
+- 링크 생성 및 관리
+- 링크 리다이렉트
+- 실시간 클릭 / 방문자 수 제공
+- 전 날 까지의 클릭 통계 데이터 제공
 
 **현재 미제공:**
 
-- {{미구현 기능 — 왜 범위 밖인지 한 줄}}
-- {{미구현 기능}}
+- access token 즉시 무효화(블랙리스트) 미지원 — 로그아웃해도 만료 전까지 유효
+- 지역(REGION) 통계는 GeoIP가 아니라 브라우저 언어 헤더 기반 근사치
+- DR(재해복구)은 로드맵만 있고 미적용 (2차 리전 복제 등)
 
-**배포 단계:** `dev` → **`demo` (현재)** → `prod` (미선언)
+**배포 단계:** `dev` → `prod`
 
 ---
 
@@ -141,16 +145,28 @@ API 상세 경로와 요청/응답 구조는 Wiki > API Specification 을 따릅
 **Backend**
 
 ```bash
-cp backend/.env.example backend/.env
+cp src/management-service/.env.example src/management-service/.env
+{{./gradlew bootRun}}
+```
+
+```bash
+cp src/redirect-service/.env.example src/redirect-service/.env
 {{./gradlew bootRun}}
 ```
 
 **Frontend**
 
 ```bash
-cd frontend
+cd src/frontend/
 npm install
 npm run dev
+```
+
+**MySQL/Redis**
+
+```
+cd src/db/
+docker compose up -d mysql redis
 ```
 
 - backend: `http://localhost:8080`

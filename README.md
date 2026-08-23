@@ -48,9 +48,9 @@
 
 > 이 프로젝트가 **의도적으로 선택한 원칙**을 3~6개 적습니다. 기능 나열이 아니라 설계 판단을 씁니다.
 
-- **{{원칙명}}** — {{무엇을 보장하고 무엇을 금지하는지}}
-- **{{원칙명}}** — {{설명}}
-- **{{원칙명}}** — {{설명}}
+- **리다이렉트는 절대 실패하지 않는다** — 클릭 로그·실시간 통계·Firehose 전송은 전부 비동기 best-effort. 큐가 포화돼도 302 응답은 항상 성공한다.
+- **소유권 검증은 JWT 클레임으로, JOIN으로 하지 않는다** — 서비스/엔티티 간 참조는 raw ID만 저장하고 연관관계를 맺지 않는다.
+- **통계는 "오늘(잠정)"과 "확정"을 섞지 않는다** — Redis는 실시간 근사치, Athena→MySQL 배치가 유일한 공식 통계 소스.
 
 ---
 
@@ -69,12 +69,12 @@
 
 | 영역 | 기술 |
 |------|------|
-| Frontend | {{React, TypeScript, Tailwind}} |
-| Backend | {{Spring Boot, JPA}} |
-| Database | {{MySQL 8.0}} |
-| Infra | {{AWS EC2, S3, RDS}} |
-| CI/CD | {{GitHub Actions}} |
-| 인증 | {{JWT / OAuth2}} |
+| Frontend | React, Vite |
+| Backend | Spring Boot 4, JPA (mini-MSA: management-service + redirect-service) |
+| Database | MySQL 8.0 (RDS Multi-AZ), Redis (ElastiCache) |
+| Infra | AWS EKS, RDS, ElastiCache, CloudFront, WAF, S3, Kinesis Firehose, Athena, Terraform |
+| CI/CD | GitHub Actions + ArgoCD(GitOps) |
+| 인증 | 카카오 OAuth2 (Authorization Code Grant) + JWT |
 
 ---
 
@@ -98,9 +98,9 @@ API 상세 경로와 요청/응답 구조는 Wiki > API Specification 을 따릅
 
 | 카테고리 | 문서 |
 |----------|------|
-| **Start Here** | 기획 배경 · User Flows · UI Screens |
-| **Architecture** | System Architecture · ERD · API Specification |
-| **Operations** | 배포 가이드 · 회의록 · 트러블슈팅 |
+| Start Here | [01. 프로젝트 개요], [10. 기능별 구현 문서] |
+| Architecture | [05. 데이터베이스 설계], [06. API 명세서], [07. 시스템 아키텍처] |
+| Operations | [08. 클라우드 인프라 (AWS)], [09. CI/CD 파이프라인], [11. 개인 회고] |
 
 ---
 
@@ -110,13 +110,17 @@ API 상세 경로와 요청/응답 구조는 Wiki > API Specification 을 따릅
 
 **현재 제공:**
 
-- {{구현 완료 기능}}
-- {{구현 완료 기능}}
+- 카카오 기반 로그인
+- 링크 생성 및 관리
+- 링크 리다이렉트
+- 실시간 클릭 / 방문자 수 제공
+- 전 날 까지의 클릭 통계 데이터 제공
 
 **현재 미제공:**
 
-- {{미구현 기능 — 왜 범위 밖인지 한 줄}}
-- {{미구현 기능}}
+- access token 즉시 무효화(블랙리스트) 미지원 — 로그아웃해도 만료 전까지 유효
+- 지역(REGION) 통계는 GeoIP가 아니라 브라우저 언어 헤더 기반 근사치
+- DR(재해복구)은 로드맵만 있고 미적용 (2차 리전 복제 등)
 
 **배포 단계:** `dev` → `prod`
 
@@ -141,16 +145,28 @@ API 상세 경로와 요청/응답 구조는 Wiki > API Specification 을 따릅
 **Backend**
 
 ```bash
-cp backend/.env.example backend/.env
+cp src/management-service/.env.example src/management-service/.env
+{{./gradlew bootRun}}
+```
+
+```bash
+cp src/redirect-service/.env.example src/redirect-service/.env
 {{./gradlew bootRun}}
 ```
 
 **Frontend**
 
 ```bash
-cd frontend
+cd src/frontend/
 npm install
 npm run dev
+```
+
+**MySQL/Redis**
+
+```
+cd src/db/
+docker compose up -d mysql redis
 ```
 
 - backend: `http://localhost:8080`

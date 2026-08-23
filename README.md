@@ -11,8 +11,8 @@
 
 > **배포 후에도 관리되는 URL 단축 서비스**
 
-[![데모 영상](https://snipy.life/VXvn1fB)]({{Drive_URL}})
-[![데모 영상](https://drive.google.com/drive/folders/14LiH1dhvIXlp33fHgaHqGFmQUyfkNWOM?usp=sharing)]({{Drive_URL}})
+데모영상 드라이브 링크 (Snipy version) : (https://snipy.life/VXvn1fB)
+데모영상 드라이브 링크 : (https://drive.google.com/drive/folders/14LiH1dhvIXlp33fHgaHqGFmQUyfkNWOM?usp=sharing)
 
 {{서비스 2~3문장 설명. 대상 사용자와 핵심 가치 중심으로.}}
 

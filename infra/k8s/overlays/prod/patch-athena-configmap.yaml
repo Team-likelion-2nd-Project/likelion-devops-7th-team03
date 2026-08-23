@@ -6,4 +6,4 @@ metadata:
   name: athena-batch-config
 data:
   ATHENA_WORKGROUP: "snipy-cluster-workgroup"
-  ATHENA_DATABASE: "snipy_cluster_click_logs"
+  ATHENA_DATABASE: "snipy-cluster_click_logs"

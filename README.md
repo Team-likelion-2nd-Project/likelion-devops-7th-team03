@@ -1,16 +1,15 @@
-# {{프로젝트명}} ({{PROJECT_NAME_EN}})
+# Snipy-링크 단축 및 마케팅 툴 서비스
 
 > **협업이 처음이신가요?** 이슈 생성부터 PR 머지까지 전 과정은 [협업 가이드](./docs/GUIDE.md)를 먼저 읽어주세요.
 
 ![Team](https://img.shields.io/badge/Team-team-03-151515?style=for-the-badge)
 <!-- 사용 기술만 남기고 나머지는 삭제 -->
 ![React](https://img.shields.io/badge/React-151515?style=for-the-badge&logo=react&logoColor=61DAFB)
-![TypeScript](https://img.shields.io/badge/TypeScript-151515?style=for-the-badge&logo=typescript&logoColor=3178C6)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-151515?style=for-the-badge&logo=springboot&logoColor=6DB33F)
 ![MySQL](https://img.shields.io/badge/MySQL-151515?style=for-the-badge&logo=mysql&logoColor=4479A1)
 ![AWS](https://img.shields.io/badge/AWS-151515?style=for-the-badge&logo=amazonwebservices&logoColor=FF9900)
 
-> **{{한 문장 소개 — 누구의 어떤 문제를, 어떻게 해결하는 서비스인가}}**
+> **배포 후에도 관리되는 URL 단축 서비스**
 
 [![데모 영상](https://img.youtube.com/vi/{{YOUTUBE_ID}}/maxresdefault.jpg)]({{YOUTUBE_URL}})
 
@@ -18,18 +17,18 @@
 
 - **배포 주소:** {{https://example.com}}
 - **시연 영상:** [YouTube]({{YOUTUBE_URL}})
-- **문서 최종 정리일:** `YYYY-MM-DD` / **구현 기준일:** `YYYY-MM-DD`
+- **문서 최종 정리일:** `2026-08-24` / **구현 기준일:** `2026-08-21`
 
 ---
 
 ## 팀 구성
 
-| 이름 | 역할 | 담당 | GitHub |
-|------|------|------|--------|
-| {{이름}} | 팀장 / BE | {{담당 도메인}} | [@{{id}}](https://github.com/{{id}}) |
-| {{이름}} | BE | {{담당 도메인}} | [@{{id}}](https://github.com/{{id}}) |
-| {{이름}} | FE | {{담당 화면}} | [@{{id}}](https://github.com/{{id}}) |
-| {{이름}} | FE | {{담당 화면}} | [@{{id}}](https://github.com/{{id}}) |
+| 이름 | 역할 | 담당 |
+|------|------|------|
+| 한소현 | 팀장 / BE / CD | {{담당 로그인 / 인프라 / 배포}} |
+| 박장현 | BE/FE | {{담당 통계 API 및 통계 대시보드 / 화면}} |
+| 유승미 | BE/CI | {{담당 통계 API / 배치 및 크론잡}} |
+| 정예준 | BE/CI | {{담당 링크 CRUD 및 리다이렉트 서비스 / 부하테스트}} |
 
 ---
 
@@ -39,9 +38,9 @@
 
 1. 위 영상 썸네일을 클릭해 전체 시연을 확인합니다.
 2. {{배포 주소}} 를 엽니다.
-3. 테스트 계정으로 로그인합니다. (`ID: {{demo}}` / `PW: {{demo1234}}`)
-4. {{핵심 기능 1}} 을 실행합니다.
-5. {{핵심 기능 2}} 결과 화면에서 {{확인 포인트}} 를 확인합니다.
+3. 테스트 계정으로 로그인합니다. (카카오 로그인 API 활용)
+4. '링크 생성' 을 실행합니다.
+5. 생성된 링크 '클릭' 후 링크 통계 화면에서 '실시간 클릭수 및 방문자 수' 를 확인합니다.
 
 ---
 
@@ -83,11 +82,12 @@
 
 | 기능 | 설명 | 로그인 필요 |
 |------|------|------------|
-| {{기능명}} | {{한 줄 설명}} | X |
-| {{기능명}} | {{한 줄 설명}} | O |
-| {{기능명}} | {{한 줄 설명}} | O |
+| 링크 생성 | 단축 링크 생성 | O |
+| 링크 목록 | 생성한 링크 확인 및 관리 | O |
+| 링크 통계 | 링크의 클릭 및 방문자 수, 유입경로 등 확인 | O |
+| 통계 대시보드 | 전체 클릭 및 방문자 수와 유입경로, 다른 링크와의 비교 대시보드 | O |
 
-주요 화면: {{메인 / 목록 / 상세 / 마이페이지}} — 자세한 구성은 Wiki > UI Screens 참고.
+주요 화면: {{링크 생성 / 목록 / 통계 대시보드}}
 API 상세 경로와 요청/응답 구조는 Wiki > API Specification 을 따릅니다.
 
 ---
@@ -118,7 +118,7 @@ API 상세 경로와 요청/응답 구조는 Wiki > API Specification 을 따릅
 - {{미구현 기능 — 왜 범위 밖인지 한 줄}}
 - {{미구현 기능}}
 
-**배포 단계:** `dev` → **`demo` (현재)** → `prod` (미선언)
+**배포 단계:** `dev` → `prod`
 
 ---
 

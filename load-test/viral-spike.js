@@ -7,11 +7,14 @@
 //
 // SLUGS는 콤마로 여러 개 가능(herd 확대용). 테스트 전 Redis에 없는 상태여야 herd가
 // 재현된다. BASE_URL 기본값이 내부 DNS인 이유는 load-test/README.md 참고(WAF 403).
+// SPIKE_TPS는 normal-traffic.js의 평소 피크(PEAK_TPS 기본 800)보다 확실히 높게 잡아야
+// "바이럴 스파이크"의 의미가 있다 — 기본값 1600은 평소 피크의 정확히 2배.
 import http from "k6/http";
 import { check } from "k6";
 
 const BASE_URL = __ENV.BASE_URL || "http://redirect-service:8080";
 const SLUGS = (__ENV.SLUGS || __ENV.SLUG || "test").split(",").map((s) => s.trim());
+const SPIKE_TPS = Number(__ENV.SPIKE_TPS || 1600);
 const TESTID = __ENV.TESTID || "unknown";
 
 export function setup() {
@@ -25,11 +28,11 @@ export const options = {
       executor: "ramping-arrival-rate",
       startRate: 0,
       timeUnit: "1s",
-      preAllocatedVUs: 200,
-      maxVUs: 500,
+      preAllocatedVUs: 400,
+      maxVUs: 1000, // SPIKE_TPS 2배 인상에 맞춰 같이 올림 — 응답 지연 시에도 목표 TPS를 유지하기 위한 예비 VU
       stages: [
-        { target: 800, duration: "10s" }, // 바이럴 — 급격한 유입
-        { target: 800, duration: "4m30s" }, // 유지
+        { target: SPIKE_TPS, duration: "10s" }, // 바이럴 — 급격한 유입
+        { target: SPIKE_TPS, duration: "4m30s" }, // 유지
         { target: 0, duration: "20s" }, // 정리
       ],
     },

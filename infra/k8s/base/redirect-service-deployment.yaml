@@ -31,8 +31,10 @@ spec:
             httpGet: { path: /actuator/health/readiness, port: 8080 }
             periodSeconds: 10
           resources:
-            requests: { cpu: 250m, memory: 512Mi }
-            # limit 500m는 부하테스트 중 CPU 100% 소진 + 쓰로틀링(초당 10~20회)이 관측됨.
-            # request(HPA 기준값, 250m)는 그대로 두고 limit만 올려서 스케일아웃 타이밍은
-            # 유지하면서 HPA가 반응하는 몇 초간의 버스트를 쓰로틀 없이 버티게 한다.
+            # request 250m가 너무 낮아서 스케줄러가 파드를 한 노드(t3.medium, 2vCPU)에
+            # 3개까지 욱여넣었고, 부하 중 그 노드 자체가 CPU 100%까지 참 — limit을
+            # 1000m로 올려도 물리 코어를 나눠 쓰는 파드끼리 계속 쓰로틀됨. request를
+            # 올려서 노드당 밀도를 낮추고, 여유가 없어지면 cluster-autoscaler가 실제로
+            # 노드를 늘리도록 유도한다.
+            requests: { cpu: 500m, memory: 512Mi }
             limits:   { cpu: 1000m, memory: 1Gi }

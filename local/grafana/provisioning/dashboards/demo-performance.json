@@ -201,23 +201,19 @@
       ]
     },
 
-    { "id": 220, "type": "row", "title": "오토스케일링 추이 (Autoscaling trend)", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 } },
+    { "id": 220, "type": "row", "title": "CPU 사용률 & 부하 분산", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 } },
     {
       "id": 221,
       "type": "timeseries",
-      "title": "redirect-service 파드 수 추이 (current vs desired)",
-      "description": "kube_horizontalpodautoscaler_status_*_replicas: redirect-service-hpa(min2/max6)만 표시",
+      "title": "redirect-service CPU 사용률",
+      "description": "process_cpu_usage: 파드별 CPU 사용률(자기 limit 대비 비율, 1.0=limit 100% 소진). up==1로 지금 살아있는 파드만 표시. HPA는 request(500m) 기준 70%에서 스케일아웃한다.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 19 },
-      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 8, "x": 8, "y": 19 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
       "targets": [
         {
-          "expr": "kube_horizontalpodautoscaler_status_current_replicas{horizontalpodautoscaler=\"redirect-service-hpa\"}",
-          "legendFormat": "current"
-        },
-        {
-          "expr": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"redirect-service-hpa\"}",
-          "legendFormat": "desired"
+          "expr": "process_cpu_usage{job=\"redirect-service\"} * on(instance) group_left(pod) (up{job=\"redirect-service\"} == 1)",
+          "legendFormat": "{{pod}}"
         }
       ]
     },
@@ -227,7 +223,7 @@
       "title": "파드별 부하 분산",
       "description": "redirect_outcome_total을 outcome 구분 없이 파드별로 합산해 100% 스택으로 표시. up==1로 지금 살아있는 파드만 필터링(안 그러면 롤아웃으로 죽은 옛날 파드의 시간범위 내 과거 데이터까지 같이 그려짐). 선들이 비슷한 두께로 나란히 있으면 트래픽이 파드에 고르게 분산되는 것, 한쪽이 넓어지면 쏠림. 파드가 새로 뜨면(오토스케일링) 구간이 하나 더 생긴다.",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 19 },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 19 },
       "fieldConfig": {
         "defaults": {
           "unit": "reqps",
@@ -240,6 +236,21 @@
         {
           "expr": "sum by (instance) (rate(redirect_outcome_total{job=\"redirect-service\"}[$__rate_interval])) * on(instance) group_left(pod) (up{job=\"redirect-service\"} == 1)",
           "legendFormat": "{{pod}}"
+        }
+      ]
+    },
+    {
+      "id": 224,
+      "type": "timeseries",
+      "title": "노드별 CPU 사용률",
+      "description": "node_cpu_seconds_total(idle 제외) 기준 노드 실사용률 — cgroup limit이 아니라 물리 코어 기준. 한 노드가 100%에 붙으면 그 위 파드들은 limit을 아무리 올려도 서로 못 벗어난다(노드당 파드 분산이 진짜 이유).",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 19 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[$__rate_interval])) * 100)",
+          "legendFormat": "{{instance}}"
         }
       ]
     }

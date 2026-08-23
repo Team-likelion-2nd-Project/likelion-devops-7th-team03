@@ -32,4 +32,7 @@ spec:
             periodSeconds: 10
           resources:
             requests: { cpu: 250m, memory: 512Mi }
-            limits:   { cpu: 500m, memory: 1Gi }
+            # limit 500m는 부하테스트 중 CPU 100% 소진 + 쓰로틀링(초당 10~20회)이 관측됨.
+            # request(HPA 기준값, 250m)는 그대로 두고 limit만 올려서 스케일아웃 타이밍은
+            # 유지하면서 HPA가 반응하는 몇 초간의 버스트를 쓰로틀 없이 버티게 한다.
+            limits:   { cpu: 1000m, memory: 1Gi }

@@ -213,19 +213,19 @@ data:
         {
           "id": 221,
           "type": "timeseries",
-          "title": "HPA 파드 수 추이 (current vs desired)",
-          "description": "kube_horizontalpodautoscaler_status_*_replicas: management-service-hpa(min2/max4), redirect-service-hpa(min2/max6) 모두 표시",
+          "title": "redirect-service 파드 수 추이 (current vs desired)",
+          "description": "kube_horizontalpodautoscaler_status_*_replicas: redirect-service-hpa(min2/max6)만 표시",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 9, "w": 12, "x": 0, "y": 19 },
           "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
           "targets": [
             {
-              "expr": "kube_horizontalpodautoscaler_status_current_replicas",
-              "legendFormat": "{{horizontalpodautoscaler}} current"
+              "expr": "kube_horizontalpodautoscaler_status_current_replicas{horizontalpodautoscaler=\"redirect-service-hpa\"}",
+              "legendFormat": "current"
             },
             {
-              "expr": "kube_horizontalpodautoscaler_status_desired_replicas",
-              "legendFormat": "{{horizontalpodautoscaler}} desired"
+              "expr": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=\"redirect-service-hpa\"}",
+              "legendFormat": "desired"
             }
           ]
         },
@@ -233,7 +233,7 @@ data:
           "id": 223,
           "type": "timeseries",
           "title": "파드별 부하 분산",
-          "description": "redirect_outcome_total을 outcome 구분 없이 파드(instance)별로 합산해 100% 스택으로 표시. 선들이 비슷한 두께로 나란히 있으면 트래픽이 파드에 고르게 분산되는 것, 한쪽이 넓어지면 쏠림. 파드가 새로 뜨면(오토스케일링) 구간이 하나 더 생긴다.",
+          "description": "redirect_outcome_total을 outcome 구분 없이 파드별로 합산해 100% 스택으로 표시. up==1로 지금 살아있는 파드만 필터링(안 그러면 롤아웃으로 죽은 옛날 파드의 시간범위 내 과거 데이터까지 같이 그려짐). 선들이 비슷한 두께로 나란히 있으면 트래픽이 파드에 고르게 분산되는 것, 한쪽이 넓어지면 쏠림. 파드가 새로 뜨면(오토스케일링) 구간이 하나 더 생긴다.",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "gridPos": { "h": 9, "w": 12, "x": 12, "y": 19 },
           "fieldConfig": {
@@ -246,8 +246,8 @@ data:
           },
           "targets": [
             {
-              "expr": "sum by (instance) (rate(redirect_outcome_total{job=\"redirect-service\"}[$__rate_interval]))",
-              "legendFormat": "{{instance}}"
+              "expr": "sum by (instance) (rate(redirect_outcome_total{job=\"redirect-service\"}[$__rate_interval])) * on(instance) group_left(pod) (up{job=\"redirect-service\"} == 1)",
+              "legendFormat": "{{pod}}"
             }
           ]
         }

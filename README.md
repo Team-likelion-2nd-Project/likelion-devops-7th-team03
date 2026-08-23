@@ -11,7 +11,8 @@
 
 > **배포 후에도 관리되는 URL 단축 서비스**
 
-[![데모 영상](https://img.youtube.com/vi/{{YOUTUBE_ID}}/maxresdefault.jpg)]({{YOUTUBE_URL}})
+[![데모 영상](https://snipy.life/VXvn1fB)]({{Drive_URL}})
+[![데모 영상](https://drive.google.com/drive/folders/14LiH1dhvIXlp33fHgaHqGFmQUyfkNWOM?usp=sharing)]({{Drive_URL}})
 
 {{서비스 2~3문장 설명. 대상 사용자와 핵심 가치 중심으로.}}
 

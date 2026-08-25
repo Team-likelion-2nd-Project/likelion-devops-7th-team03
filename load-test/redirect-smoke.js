@@ -11,14 +11,22 @@ import { check, sleep } from "k6";
 
 const BASE_URL = __ENV.BASE_URL || "https://dev.snipy.life";
 const SLUG = __ENV.SLUG || "test";
+const TESTID = __ENV.TESTID || "unknown";
 
 export const options = {
   vus: Number(__ENV.VUS || 10),
   duration: __ENV.DURATION || "30s",
+  tags: { testid: TESTID }, // 모든 메트릭에 testid 라벨을 붙여 Grafana/Prometheus에서 이번 실행만 필터링 가능하게 함
 };
 
+export function setup() {
+  console.log(`[testid] ${TESTID}`);
+}
+
 export default function () {
-  const res = http.get(`${BASE_URL}/${SLUG}`, { redirects: 0 });
+  // tags.name 고정 — 안 주면 k6가 URL(슬러그별로 다 다름)을 그대로 메트릭 라벨로 써서
+  // Prometheus 시계열이 slug 개수만큼 폭발한다 (실제로 87만 개까지 간 적 있음).
+  const res = http.get(`${BASE_URL}/${SLUG}`, { redirects: 0, tags: { name: "redirect" } });
 
   check(res, {
     "status is 302 or 404": (r) => r.status === 302 || r.status === 404,

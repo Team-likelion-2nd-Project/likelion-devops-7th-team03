@@ -15,12 +15,26 @@ spec:
             - run
             - --out
             - experimental-prometheus-rw
-            - /scripts/redirect-smoke.js
+            - /scripts/${SCRIPT_FILE}
           env:
             - name: BASE_URL
               value: "${BASE_URL}"
             - name: SLUG
               value: "${SLUG}"
+            - name: SLUGS
+              value: "${SLUG}"
+            - name: SLUG_PREFIX
+              value: "${SLUG_PREFIX}"
+            - name: SLUG_COUNT
+              value: "${SLUG_COUNT}"
+            - name: PEAK_TPS
+              value: "${PEAK_TPS}"
+            - name: MAX_TPS
+              value: "${MAX_TPS}"
+            - name: RAMP_DURATION
+              value: "${RAMP_DURATION}"
+            - name: TESTID
+              value: "${TESTID}"
             - name: VUS
               value: "${VUS}"
             - name: DURATION
@@ -33,6 +47,11 @@ spec:
             # feature를 켜야 remote-write로 받아들인다.
             - name: K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM
               value: "true"
+          resources:
+            # 리소스 상한 없이 두면 고TPS 테스트 중 k6 자체가 노드 메모리를 과점해서
+            # 같은 노드의 다른 파드(Grafana 등)가 밀려날 수 있어 명시적으로 제한한다.
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { cpu: 1000m, memory: 1Gi }
           volumeMounts:
             - name: script
               mountPath: /scripts
